@@ -28,6 +28,7 @@ export interface MenuDeps {
   onSkip: () => void;
   onPresenter: () => void;
   onCompanion: () => void;
+  onAdmin: () => void;
 }
 
 const QUALITIES: Quality[] = ['high', 'medium', 'low'];
@@ -51,6 +52,7 @@ export class PauseMenu {
       { id: 'companion', kind: 'action', labelKey: 'menu.companion', activate: () => { this.close(); d.onCompanion(); } },
       { id: 'skip', kind: 'action', labelKey: 'menu.skip', activate: () => { this.close(); d.onSkip(); } },
       { id: 'restart', kind: 'action', labelKey: 'menu.restart', activate: () => { this.close(); d.onRestart(); } },
+      { id: 'admin', kind: 'action', labelKey: 'menu.admin', activate: () => { this.close(); d.onAdmin(); } },
       { id: 'sep1', kind: 'separator', labelKey: '' },
       {
         id: 'language',

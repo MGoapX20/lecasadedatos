@@ -10,6 +10,8 @@ import { loadModels } from './render/models';
 import { GameFlow } from './game/flow';
 import { applySavedBuilding, mountPresenter } from './game/presenter';
 import { PauseMenu } from './game/menu';
+import { mountAdmin } from './game/admin';
+import { publishAdmin } from './game/admin-channel';
 import { Overlay } from './ui/overlay';
 import { applyDocumentLang } from './ui/i18n';
 import { mountCompanion } from './companion/publisher';
@@ -61,7 +63,9 @@ async function boot(): Promise<void> {
     onSkip: () => flow.skipStage(),
     onPresenter: () => flow.togglePresenter(),
     onCompanion: () => companion.open(),
+    onAdmin: () => admin.show(),
   });
+  const admin = mountAdmin(flow, () => { if (menu.open) menu.close(); input.releaseHeld(); });
   const toggleMenu = () => {
     audio.unlock();
     audio.resume();
@@ -80,9 +84,10 @@ async function boot(): Promise<void> {
   resize();
 
   // Handy for the presenter and for debugging on the fair laptop.
-  (window as unknown as { casa: unknown }).casa = { flow, world: flow.world, view, stage, director, level, menu, input, companion };
+  (window as unknown as { casa: unknown }).casa = { flow, world: flow.world, view, stage, director, level, menu, input, companion, admin };
 
   flow.enter('attract');
+  publishAdmin(admin);
 
   const loop = new GameLoop(
     () => flow.tickSim(),
@@ -93,6 +98,7 @@ async function boot(): Promise<void> {
       if (input.pollMenuButton()) toggleMenu();
       if (menu.open) menu.update(state, dtMs);
       flow.update(dtMs);
+      admin.update();
       companion.update(performance.now());
       stage.render(director, dtMs);
     },

@@ -124,6 +124,7 @@
   "menu.hint": "Arrows to move · Left/Right to change · Enter to select · Esc to close",
   "menu.resume": "Resume",
   "menu.restart": "Start over",
+  "menu.admin": "Admin / testing (F3)",
   "menu.skip": "Skip to next stage",
   "menu.language": "Language",
   "menu.quality": "Graphics",

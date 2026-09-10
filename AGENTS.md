@@ -1,5 +1,14 @@
 # La Casa de Datos — handoff notes (written 2026-09-08, 4 days before the conference)
 
+## Agent gameplay testing controls
+Read `docs/admin-testing.md` before interactive gameplay testing. Use F3's admin
+panel to start/reset/skip stages, disable catches and stage timers for exploration,
+and change uniform or camera power. Use its accessible labels/stable test IDs;
+do not mutate private runtime state. Close the panel before movement and reopen
+it to pause or inspect status. Reload after testing to restore normal defaults.
+Alternatively open `/admin.html` to control a separate game tab without rendering
+the game on the admin page. Select the game session and wait for command acknowledgements.
+
 Read README.md first for the game's structure. This file is the context that isn't in the README:
 what the game is for, what hardware it runs on, what was decided, and what to do next.
 

@@ -109,8 +109,6 @@ const PLAYER_RADIUS = 0.7;
 const SUSPICION_TO_CHASE = 8; // ticks in sight
 /** A stolen uniform: guards only recognise the thief this close. Must match the planner. */
 export const DISGUISE_RANGE_MUL = 0.3;
-/** Cutting the fuse box blinds the cameras for this long: effectively the round. */
-const POWER_CUT_TICKS = 1200;
 const SUSPICIOUS_HOLD = 30;
 const CHASE_LOST = 60;
 
@@ -124,6 +122,8 @@ export class SimWorld {
   keyTaken: Uint8Array;
   /** Cameras are dead until this tick once somebody has pulled the fuse. */
   camerasDownUntil = -1;
+  /** Session-only operator control; detection still runs when arrests are off. */
+  catchesEnabled = true;
   private uniformIds = new Set<string>();
   private fuseIds = new Set<string>();
   alarmUntilTick = -1;
@@ -920,10 +920,27 @@ export class SimWorld {
     return false;
   }
 
+  setPlayerUniform(enabled: boolean): void {
+    const player = this.player;
+    if (!player) throw new Error('Uniform requires a player. Start round 1 first.');
+    for (const id of this.uniformIds) {
+      if (enabled) player.keys.add(id);
+      else player.keys.delete(id);
+      const index = this.level.json.keycards.findIndex(k => k.id === id);
+      if (index >= 0) this.keyTaken[index] = enabled ? 1 : 0;
+    }
+  }
+
+  setPowerEnabled(enabled: boolean): void {
+    this.camerasDownUntil = enabled ? -1 : Infinity;
+  }
+
   /** What picking up an item does beyond opening doors. */
   private applyItem(t: Thief, id: string): void {
     if (this.fuseIds.has(id)) {
-      this.camerasDownUntil = this.tick + POWER_CUT_TICKS;
+      // A severed fuse stays severed through drilling and exfiltration. The
+      // old 60-second expiry restored sweeps and badges during longer rounds.
+      this.setPowerEnabled(false);
       this.events.push({ kind: 'powerCut', thief: t.id, untilTick: this.camerasDownUntil });
     } else if (this.uniformIds.has(id)) {
       this.events.push({ kind: 'disguised', thief: t.id });
@@ -1404,6 +1421,7 @@ export class SimWorld {
   }
 
   private catchThief(t: Thief, g: Guard): void {
+    if (!this.catchesEnabled) return;
     if (t.caught || t.retired) return;
     t.caughtCount++;
     this.events.push({ kind: 'caught', thief: t.id, guard: g.id, x: t.x, y: t.y });

@@ -225,6 +225,14 @@ export class InputManager {
     this.onMenu = fn;
   }
 
+  releaseHeld(): void {
+    this.keys.clear();
+    this.mouseDown = false;
+    this.mouseClickQueued = false;
+    this.orbiting = false;
+    this.orbitDx = this.orbitDy = 0;
+  }
+
   /** Gamepad Start, so the menu is reachable without a keyboard. */
   private startWasDown = false;
   pollMenuButton(): boolean {

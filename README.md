@@ -88,6 +88,12 @@ them; click a door to lock it.
 
 ## Menu (Esc)
 
+**F3** (or **Admin / testing** in the menu) opens stage skip/reset controls,
+catch and timer toggles, and live uniform/camera-power controls. See
+[admin and agent testing](docs/admin-testing.md) for semantics and automation IDs.
+Open `/admin.html` for a standalone admin page controlling a game in another tab.
+Both admin views include a **Game URLs** directory.
+
 Resume, skip to the next stage, start over, language (English / עברית), graphics
 quality, AI swarm size, music and sound volume, fullscreen, presenter mode, and
 clearing the leaderboard.

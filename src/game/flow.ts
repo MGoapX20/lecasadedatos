@@ -132,6 +132,10 @@ export class GameFlow {
   private planningLabel: string | null = null;
   private lastAlarmState = false;
   paused = false;
+  timersEnabled = true;
+  adminAssisted = false;
+  private stageRevision = 0;
+  private adminStartSwarm = false;
   private presenterReturn: State = 'attract';
   onPresenterOpen?: () => void;
 
@@ -180,6 +184,8 @@ export class GameFlow {
   }
 
   enter(next: State): void {
+    this.stageRevision++;
+    this.adminStartSwarm = false;
     this.state = next;
     this.stateMs = 0;
     this.idleMs = 0;
@@ -809,12 +815,13 @@ export class GameFlow {
   }
 
   private async spawnWaveA(): Promise<void> {
+    const revision = this.stageRevision;
     // One thief with a good plan, walked slowly. Planning at machine speed is
     // what makes a route exist at all; WAVE_A_RATE is what makes him human. He
     // never replans, so a guard the visitor moves is one his plan cannot know.
     const walkers = enumerateRequests(this.d.level, 24, 4242, 1, [0, 2, 4]);
     const plans = await this.requestPlans(walkers);
-    if (this.state !== 'round2a' || plans === null) return;
+    if (revision !== this.stageRevision || this.state !== 'round2a' || plans === null) return;
     let chosen = this.pickWalker(plans);
     if (!chosen) {
       // The building is currently too tight for a walker. Send a fast one
@@ -825,7 +832,7 @@ export class GameFlow {
       const fallback = await this.requestPlans(
         enumerateRequests(this.d.level, 24, 91, 1, [0, 2, 4, 6]).map((r) => ({ ...r, naive: true })),
       );
-      if (this.state !== 'round2a' || fallback === null) return;
+      if (revision !== this.stageRevision || this.state !== 'round2a' || fallback === null) return;
       chosen = this.pickWalker(fallback);
     }
     if (!chosen) {
@@ -879,6 +886,7 @@ export class GameFlow {
    * clock keeps showing the real planning time, not the length of the reveal.
    */
   private async setupAiThink(): Promise<void> {
+    const revision = this.stageRevision;
     const { overlay, director, view, level } = this.d;
     overlay.show('think');
     this.swarmPlans = [];
@@ -899,13 +907,13 @@ export class GameFlow {
     overlay.think({ ways: 0, unit: t('think.ways'), clock: '' });
 
     let plans = await this.requestSwarmPlans();
-    if (this.state !== 'aiThink') return;
+    if (revision !== this.stageRevision || this.state !== 'aiThink') return;
     if (plans === null || !plans.length) {
       // The one beat the whole exhibit is built around. If the worker was taken
       // by a stale job, or came back with nothing, ask again before giving up.
       console.warn('[casa] swarm planning came back empty, retrying once');
       plans = await this.requestSwarmPlans();
-      if (this.state !== 'aiThink') return;
+      if (revision !== this.stageRevision || this.state !== 'aiThink') return;
     }
     const found = plans ?? [];
     this.swarmPlans = found;
@@ -930,6 +938,11 @@ export class GameFlow {
     view.ribbons.setOpacity(0.85);
     view.ribbons.reveal(0);
     this.thinkDurationMs = 900 + this.ways.length * 420 + 3000;
+    if (this.adminStartSwarm) {
+      this.adminStartSwarm = false;
+      if (found.length) this.enter('round2b');
+      else this.d.overlay.toast('No routes found. Reset this stage to retry.');
+    }
   }
 
   /** Name a way in the visitor's terms: which door, and how it got through. */
@@ -1111,7 +1124,7 @@ export class GameFlow {
     });
 
     if (wave === 'b') {
-      this.waveBStarted += dtMs;
+      if (this.timersEnabled) this.waveBStarted += dtMs;
       this.session.round2.heldMs = this.session.round2.firstBreachMs ?? this.waveBStarted;
     }
     director.lookNear(0, 0, 0.1);
@@ -1364,7 +1377,7 @@ export class GameFlow {
       caught: r2.caughtCount,
       at: Date.now(),
     };
-    const { board } = submit(entry);
+    const board = this.adminAssisted ? loadBoard() : submit(entry).board;
     overlay.setWanted(board);
 
     const youWays = r1.breached ? 1 : 0;
@@ -1595,6 +1608,49 @@ export class GameFlow {
     this.enter('attract');
   }
 
+  /** Operator actions use the same setup paths as ordinary play. */
+  adminAction(action: 'skip' | 'resetStage' | 'restart' | 'startRound1'): void {
+    this.adminAssisted = true;
+    if (action === 'skip' && this.state === 'aiThink' && !this.swarmPlans.length) {
+      this.adminStartSwarm = true;
+      return;
+    }
+    if (action === 'skip') { this.skipStage(); return; }
+    this.d.planner.cancel();
+    this.hitStopMs = 0;
+    if (action === 'restart' || action === 'startRound1') this.restart();
+    if (action === 'startRound1') this.enter('round1');
+    else if (action === 'resetStage') {
+      if (this.state === 'round1') this.session.reset(this.session.codename);
+      if (this.state === 'round2a' || this.state === 'round2b') this.session.round2 = new Session().round2;
+      if (this.state === 'round2b') {
+        this.resetWorldForPlay();
+        this.enter('aiThink');
+        this.adminStartSwarm = true;
+        return;
+      }
+      this.enter(this.state);
+    }
+  }
+
+  setAdminOption(option: 'catches' | 'timers' | 'uniform' | 'power', enabled: boolean): void {
+    this.adminAssisted = true;
+    if (option === 'catches') this.world.catchesEnabled = enabled;
+    if (option === 'timers') { this.timersEnabled = enabled; this.idleMs = 0; }
+    if (option === 'uniform') { this.world.setPlayerUniform(enabled); this.d.view.markKeycard(this.world); }
+    if (option === 'power') this.world.setPowerEnabled(enabled);
+  }
+
+  get adminStatus() {
+    return {
+      stage: this.state, elapsedMs: this.stateMs, paused: this.paused,
+      catches: this.world.catchesEnabled, timers: this.timersEnabled,
+      uniform: !!this.world.player && this.world.isDisguised(this.world.player),
+      power: !this.world.camerasDown, hasPlayer: !!this.world.player,
+      assisted: this.adminAssisted, waitingForSwarm: this.adminStartSwarm,
+    };
+  }
+
   update(dtMs: number): void {
     const { input, overlay, view, director } = this.d;
     if (this.paused) {
@@ -1605,8 +1661,8 @@ export class GameFlow {
       return;
     }
     this.hitStopMs = Math.max(0, this.hitStopMs - dtMs);
-    this.stateMs += dtMs;
-    this.idleMs = input.idle ? this.idleMs + dtMs : 0;
+    if (this.timersEnabled) this.stateMs += dtMs;
+    this.idleMs = this.timersEnabled && input.idle ? this.idleMs + dtMs : 0;
 
     const s = input.state;
     overlay.setCursor(
@@ -1626,7 +1682,7 @@ export class GameFlow {
         }
         break;
       case 'brief1':
-        if (this.stateMs > TIMERS.intro1 || (this.stateMs > 900 && s.start.pressed)) {
+        if (this.stateMs > TIMERS.intro1 || ((!this.timersEnabled || this.stateMs > 900) && s.start.pressed)) {
           this.enter('round1');
         }
         break;
@@ -1659,7 +1715,7 @@ export class GameFlow {
         if (this.stateMs > TIMERS.round1Result) this.enter('brief2');
         break;
       case 'brief2':
-        if (this.stateMs > TIMERS.intro2 || (this.stateMs > 900 && s.start.pressed)) {
+        if (this.stateMs > TIMERS.intro2 || ((!this.timersEnabled || this.stateMs > 900) && s.start.pressed)) {
           this.enter('round2a');
         }
         break;
@@ -1690,6 +1746,7 @@ export class GameFlow {
         if (settled) {
           if (this.session.round2.waveA === 'pending') this.session.round2.waveA = 'timeout';
           if (this.waveAResultMs === 0) {
+            this.waveAResultMs = 1;
             // The verdict gets its own beat; jumping straight to the AI read as a bug.
             // It also has to be the truth: he was caught, or he was shut out, or
             // he ran out of time, and the banner used to call all three a catch.
@@ -1706,7 +1763,7 @@ export class GameFlow {
             this.d.audio.play(lost ? 'breach' : 'confirm');
             this.d.director.shake(lost ? 0.6 : 0.25);
           }
-          this.waveAResultMs += dtMs;
+          if (this.timersEnabled) this.waveAResultMs += dtMs;
           if (this.waveAResultMs > TIMERS.round2AResult) this.enter('aiThink');
         }
         break;

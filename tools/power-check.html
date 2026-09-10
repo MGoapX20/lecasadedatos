@@ -1,0 +1,45 @@
+<!doctype html><html lang="en"><meta charset="utf-8"><title>Camera power regression — real simulation</title>
+<style>body{margin:0;background:#101923;color:#fff;font:16px system-ui}header{padding:18px 24px}h1{font-size:23px;margin:0 0 8px}p{margin:6px 0;color:#c4d4e4}button{padding:10px;margin:10px 8px 0 0;background:#2b455d;color:#fff;border:1px solid #88a3bc;border-radius:5px}canvas{width:100%;height:580px;display:block}output{display:block;padding:12px 24px;background:#19392d;white-space:pre-line}#log{padding:0 24px;font:14px monospace}</style>
+<header><h1>Camera power regression</h1><p>Real fuse puzzle, drill simulation and game renderer. Test setup positions the player and removes guards; time advances with the buttons.</p>
+<button id="cut" disabled>1. Cut live fuse wires</button><button id="wait" disabled>2. Advance 65 seconds</button><button id="drill" disabled>3. Drill through wall</button><button id="after" disabled>4. Advance another 65 seconds</button></header>
+<output id="status">Loading game assets…</output><canvas id="stage"></canvas><pre id="log"></pre>
+<script type="module">
+import {loadLevel} from '/src/level/loader.ts';
+import {loadModels} from '/src/render/models.ts';
+import {CameraDirector} from '/src/render/camera.ts';
+import {createStage} from '/src/render/renderer.ts';
+import {WorldView} from '/src/render/worldView.ts';
+import {SimWorld} from '/src/sim/world.ts';
+const level=await loadLevel('/levels/mint_v1.json');
+const director=new CameraDirector();director.setBounds(level.w*level.cellSize*.44,level.h*level.cellSize*.44);
+const canvas=document.querySelector('canvas');const stage=createStage(canvas,director);
+const view=new WorldView(level,stage,await loadModels());stage.setNight(false);view.setCutaway(true);
+const world=new SimWorld(level,11);world.guards=[];const player=world.spawnPlayer('front','Power test');
+const resize=()=>{stage.resize(innerWidth,580,director);director.cut('gameplay');};resize();addEventListener('resize',resize);
+const sync=()=>{world.drainEvents();view.sync(world,0.05,{showCones:true});stage.render(director,0);};
+world.step();sync();let cutTick=0;let baseline=[];
+const status=document.querySelector('#status');const log=document.querySelector('#log');
+function report(label){
+  sync();
+  const still=[...view.building.cameras.values()].every((c,i)=>Math.abs(c.rotation.y-baseline[i])<1e-8);
+  const badges=view.cameraGlyphs.every(g=>g.visible);
+  const beams=[...view.building.cameraBeams.values()].every(g=>!g.visible);
+  const pass=world.camerasDown&&still&&badges&&beams;
+  const text=`${pass?'PASS':'FAIL'} · ${label}\n${((world.tick-cutTick)/level.json.rules.tickHz).toFixed(1)}s since power cut · Wall ${world.holeOpen?'OPEN':'intact'} · Camera movement ${still?'STOPPED':'MOVING'} · Power-off badges ${badges?'VISIBLE':'MISSING'} · Beams ${beams?'OFF':'ON'}`;
+  status.textContent=text;log.textContent+=text+'\n\n';
+}
+document.querySelector('#cut').disabled=false;status.textContent='Ready — cameras powered on.';
+document.querySelector('#cut').onclick=()=>{
+  const fuse=level.json.keycards.find(k=>k.kind==='fuse');player.x=fuse.cell[0]+.5;player.y=fuse.cell[1]+.5;world.step();
+  for(let i=0;world.activeWire&&i<40;i++){world.activeWire.select(world.activeWire.wires.findIndex(w=>w.live&&!w.cut));world.attemptCut();world.step();}
+  cutTick=world.tick;sync();baseline=[...view.building.cameras.values()].map(c=>c.rotation.y);report('Fuse cut');
+  document.querySelector('#cut').disabled=true;document.querySelector('#wait').disabled=false;
+};
+document.querySelector('#wait').onclick=()=>{for(let i=0;i<65*level.json.rules.tickHz;i++){world.step();if(i%20===0)sync();}report('Past old 60-second expiry');document.querySelector('#wait').disabled=true;document.querySelector('#drill').disabled=false;};
+document.querySelector('#drill').onclick=()=>{
+  const def=world.exfil;player.breached=true;player.x=def.stand[0]+.5;player.y=def.stand[1]+.5;
+  for(let i=0;!world.holeOpen&&i<2000;i++){world.setDrilling(!world.activeDrill||world.activeDrill.heat<.8);world.step();if(i%20===0)sync();}
+  report('Wall broken');document.querySelector('#drill').disabled=true;document.querySelector('#after').disabled=false;
+};
+document.querySelector('#after').onclick=()=>{for(let i=0;i<65*level.json.rules.tickHz;i++){world.step();if(i%20===0)sync();}report('65 seconds after breach');document.querySelector('#after').disabled=true;};
+</script></html>

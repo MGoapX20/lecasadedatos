@@ -112,6 +112,36 @@ describe('the fuse box in the world', () => {
     expect(world.camerasDown, 'the last wire should take the cameras with it').toBe(true);
   });
 
+  it('keeps power off beyond a minute, through the wall breach and exfiltration', () => {
+    const { world, player } = standAtTheBox();
+    world.guards = [];
+    world.step();
+    for (let i = 0; world.activeWire && i < 40; i++) {
+      world.activeWire.select(world.activeWire.wires.findIndex(w => w.live && !w.cut));
+      world.attemptCut();
+      world.step();
+    }
+    expect(world.camerasDown).toBe(true);
+    // Stay in the same round beyond the old 1,200-tick power timeout.
+    for (let i = 0; i < 1300; i++) world.step();
+    expect(world.camerasDown).toBe(true);
+    const def = world.exfil!;
+    player.breached = true;
+    player.x = def.stand[0] + 0.5;
+    player.y = def.stand[1] + 0.5;
+    for (let i = 0; !world.holeOpen && i < 2000; i++) {
+      world.setDrilling(!world.activeDrill || world.activeDrill.heat < 0.8);
+      world.step();
+      expect(world.camerasDown).toBe(true);
+    }
+    expect(world.holeOpen).toBe(true);
+    for (let i = 0; i < 1300; i++) world.step();
+    expect(world.camerasDown).toBe(true);
+    // Operator restoration is still deliberate and reversible.
+    world.setPowerEnabled(true);
+    expect(world.camerasDown).toBe(false);
+  });
+
   it('brings the guards over when the panel shorts', () => {
     const { world } = standAtTheBox();
     world.step();
