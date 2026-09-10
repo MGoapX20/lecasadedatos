@@ -14,7 +14,7 @@ import { fineXYToWorldX, fineXYToWorldZ, worldToFine } from './loader';
  * Keep in step with `propGeometry` in `src/render/building.ts` and the model
  * lengths in `src/render/models.ts`.
  */
-const FOOTPRINT: Record<string, [number, number]> = {
+export const FOOTPRINT: Record<string, [number, number]> = {
   column: [0.75, 0.75],
   desk: [1.2, 0.65],
   press: [1.6, 1.1],

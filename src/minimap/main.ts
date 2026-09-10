@@ -30,7 +30,10 @@ function draw() {
   ctx.save();ctx.beginPath();
   for(let y=0;y<m.h;y++)for(let x=0;x<m.w;x++)if(m.cells[y*m.w+x]!==2)ctx.rect(x,y,1,1);
   ctx.clip();ctx.fillStyle='#1a252d';ctx.beginPath();
-  for(const obstacle of m.obstacles)ctx.roundRect(obstacle.x,obstacle.y,obstacle.width,obstacle.height,.35);
+  for(const obstacle of m.obstacles){
+    ctx.save();ctx.translate(obstacle.x,obstacle.y);ctx.rotate(-obstacle.rotation*Math.PI/180);
+    ctx.rect(-obstacle.width/2,-obstacle.height/2,obstacle.width,obstacle.height);ctx.restore();
+  }
   ctx.fill();ctx.restore();
   ctx.lineWidth=.3;
   const box=(r:readonly number[],fill:string)=>{ctx.fillStyle=fill;ctx.fillRect(r[0],r[1],r[2],r[3]);};
@@ -71,7 +74,7 @@ function draw() {
   for(const g of m.guards)actor(g.x,g.y,g.facing,'#62aaff');
   // Draw the larger, white-edged player last so nearby actors cannot cover it.
   for(const p of [...m.thieves].sort((a,b)=>Number(a.player)-Number(b.player)))
-    actor(p.x,p.y,p.facing,p.player?'#f04452':'#ef6e78',p.player?1.5:.7,p.player);
+    actor(p.x,p.y,p.facing,p.player?'#f04452':'#ef6e78',p.player?1.2:.7,p.player);
 }
 function watch() { if(selected)bus.postMessage({type:'watch',id:selected}); }
 function choose(id:string) {

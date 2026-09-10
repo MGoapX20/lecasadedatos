@@ -1,6 +1,7 @@
 import type { SimWorld } from '../sim/world';
 import { cameraFacingAt } from '../sim/vision';
 import { DEFAULT_PROP_RADIUS } from '../level/loader';
+import { FOOTPRINT } from '../level/clearance';
 
 export function mapSnapshot(world: SimWorld) {
   const l = world.level;
@@ -11,9 +12,13 @@ export function mapSnapshot(world: SimWorld) {
   return {
     w: l.w, h: l.h, cells, indoor: l.indoor, tick: world.tick, power: !world.camerasDown,
     obstacles: l.json.props.filter(p => p.solid && p.kind !== 'store').map(p => {
-      // Use each prop's collision extent, rather than its stair-stepped raster outline.
+      // Compact markers preserve the furniture's length/depth proportions.
       const half = Math.floor((p.radius ?? DEFAULT_PROP_RADIUS[p.kind] ?? .8) / l.cellSize);
-      return { x: p.cell[0] - half, y: p.cell[1] - half, width: half * 2 + 1, height: half * 2 + 1 };
+      const [ex, ez] = FOOTPRINT[p.kind] ?? [.6, .6];
+      const factor = Math.min(2 * (p.scale ?? 1) / l.cellSize * .85,
+        (half * 2 + 1) * .8 / Math.max(ex, ez));
+      return { x: p.cell[0] + .5, y: p.cell[1] + .5,
+        width: ex * factor, height: ez * factor, rotation: p.rotDeg ?? 0 };
     }),
     doors: l.doors.map((d, i) => ({ id: d.id, rect: d.rect,
       open: world.doorOpenFor(i, null) || (d.id === 'd_dock_outer' && world.gateOpenForTruck) })),
