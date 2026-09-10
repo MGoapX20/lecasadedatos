@@ -933,3 +933,13 @@ html.cursor-visible select { cursor: pointer; }
 .obj-arrow { width: min(210px, 32vw); }
 
 .entrance-indicator { position:absolute; width:28px; height:28px; display:grid; place-items:center; color:#ffe02b; background:none; border:0; border-radius:0; font-size:19px; text-shadow:0 1px 3px #000; pointer-events:none; transform:translate(-50%,-50%); }
+
+/* Traversal progress follows simulation time, including pauses. */
+#h1-traversal { display:none; width:clamp(66px,10vmin,110px); height:clamp(66px,10vmin,110px); fill:none; filter:drop-shadow(0 2px 4px #000); }
+.progress-wrap[data-shape="square"] #h1-traversal, .progress-wrap[data-shape="circle"] #h1-traversal { display:block; }
+.progress-wrap:not([data-shape="bar"]) > .progress { display:none; }
+.progress-wrap[data-shape="square"] .traversal-circle, .progress-wrap[data-shape="circle"] .traversal-square { display:none; }
+.t-track { fill:rgba(8,14,20,.85); stroke:#525c64; stroke-width:7; }
+.t-fill { stroke:#ffe02b; stroke-width:7; stroke-dasharray:100; stroke-dashoffset:var(--remaining,100); transition:stroke-dashoffset 50ms linear; }
+.t-motion { stroke:#ffe02b; stroke-width:2; opacity:.65; stroke-dasharray:12 13; stroke-dashoffset:var(--travel,0); transition:stroke-dashoffset 50ms linear; }
+.t-chevron { stroke:#fff0a0; stroke-width:3; stroke-linecap:round; stroke-linejoin:round; }

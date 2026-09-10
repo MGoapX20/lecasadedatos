@@ -70,7 +70,12 @@
           <div class="chip"><span class="chip-k" data-i18n="round1.hud.caught"></span><span class="chip-v" id="h1-caught">0</span></div>
         </div>
         <div class="banner" id="h1-banner"></div>
-        <div class="progress-wrap" id="h1-progress-wrap"><div class="progress" id="h1-progress"></div><span id="h1-progress-label"></span></div>
+        <div class="progress-wrap" id="h1-progress-wrap" role="progressbar" aria-valuemin="0" aria-valuemax="100">
+          <svg id="h1-traversal" viewBox="0 0 100 100" aria-hidden="true">
+            <g class="traversal-square"><rect class="t-track" x="10" y="10" width="80" height="80"/><rect class="t-fill" x="10" y="10" width="80" height="80" pathLength="100"/><rect class="t-motion" x="27" y="27" width="46" height="46" pathLength="100"/></g>
+            <g class="traversal-circle"><circle class="t-track" cx="50" cy="50" r="40"/><circle class="t-fill" cx="50" cy="50" r="40" pathLength="100" transform="rotate(-90 50 50)"/><circle class="t-motion" cx="50" cy="50" r="23" pathLength="100"/></g>
+            <path class="t-chevron" d="M40 55 L50 45 L60 55 M40 66 L50 56 L60 66"/>
+          </svg><div class="progress" id="h1-progress"></div><span id="h1-progress-label"></span></div>
         <div class="pick-wrap" id="h1-pick">
           <span class="pick-label" id="h1-pick-label"></span>
           <div class="pick-bar">

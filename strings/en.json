@@ -297,5 +297,7 @@
   "guide.load": "Go to a printing press and press SPACE to take a load",
   "guide.van": "Carry the load to the van and press SPACE to deliver",
   "guide.ride": "Stay in the truck until it reaches the loading bay",
-  "guide.prepare": "Collect the uniform and cut the power — in either order"
+  "guide.prepare": "Collect the uniform and cut the power — in either order",
+  "round1.throughSewer": "Moving through the sewer",
+  "round1.throughVent": "Moving through the air vent"
 }

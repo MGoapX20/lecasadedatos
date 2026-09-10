@@ -200,7 +200,7 @@ export class Overlay {
     caught: number;
     goal: string;
     banner: string | null;
-    progress: { label: string; value: number } | null;
+    progress: { label: string; value: number; shape?: 'square' | 'circle' } | null;
     pick: {
       label: string;
       hint: string;
@@ -243,7 +243,14 @@ export class Overlay {
     banner.classList.toggle('show', !!opts.banner);
     const wrap = el('h1-progress-wrap');
     wrap.classList.toggle('show', !!opts.progress);
+    wrap.dataset.shape = opts.progress?.shape ?? 'bar';
     if (opts.progress) {
+      const fraction = Math.max(0, Math.min(1, opts.progress.value));
+      const tunnel = el('h1-traversal');
+      tunnel.style.setProperty('--remaining', String(100 * (1 - fraction)));
+      tunnel.style.setProperty('--travel', String(-fraction * 160));
+      wrap.setAttribute('aria-valuenow', String(Math.round(fraction * 100)));
+      wrap.setAttribute('aria-label', opts.progress.label);
       el('h1-progress').style.setProperty('--p', `${Math.round(opts.progress.value * 100)}%`);
       el('h1-progress-label').textContent = opts.progress.label;
     }

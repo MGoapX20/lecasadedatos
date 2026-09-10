@@ -707,9 +707,13 @@ export class GameFlow {
       else this.world.boardTruck();
     }
 
-    let progress: { label: string; value: number } | null = null;
-    if (player.portalTicks > 0) {
-      progress = { label: '…', value: 0.5 };
+    let progress: { label: string; value: number; shape: 'square' | 'circle' } | null = null;
+    if (player.portalTicks > 0 && player.portalRef) {
+      const sewer = player.portalRef.def.id === 'p_sewer';
+      const total = player.portalRef.quanta * level.json.rules.quantumTicks;
+      progress = { label: t(sewer ? 'round1.throughSewer' : 'round1.throughVent'),
+        value: Math.max(0, Math.min(1, 1 - player.portalTicks / Math.max(1, total))),
+        shape: sewer ? 'circle' : 'square' };
     }
 
     const timeLeft = TIMERS.round1Cap - this.stateMs;
