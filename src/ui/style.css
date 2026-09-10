@@ -928,8 +928,6 @@ html.cursor-visible select { cursor: pointer; }
 }
 .companion-launch:hover, .companion-launch:focus-visible { border-color: #ed1b29; color: white; }
 
-.guide-prompt { position:absolute; top:15%; inset-inline-start:var(--pad); max-width:min(360px, 38vw); padding:12px 16px; border-inline-start:4px solid #ffe02b; border-radius:4px; background:rgba(12,16,22,.9); color:#ffe85a; font-size:clamp(14px,2vmin,23px); line-height:1.4; pointer-events:none; }
-.guide-prompt[hidden] { display:none; }
 .obj-arrow { color:#ffe02b; }
 .obj-label { max-width:210px; text-align:center; letter-spacing:.04em; background:rgba(12,16,22,.85); border-radius:4px; padding:4px 8px; }
 .obj-arrow { width: min(210px, 32vw); }

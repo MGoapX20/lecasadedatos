@@ -194,7 +194,6 @@ export class GameFlow {
     this.adminStartSwarm = false;
     this.state = next;
     this.d.view.setGuideTargets([]);
-    this.d.overlay.setGuide(null);
     this.d.overlay.setEntranceIndicators([]);
     this.stateMs = 0;
     this.idleMs = 0;
@@ -692,7 +691,6 @@ export class GameFlow {
 
     this.guideStep = this.guided ? this.walkthrough.update(this.world, level, this.missions) : null;
     this.d.view.setGuideTargets(this.guideStep?.targets ?? []);
-    this.d.overlay.setGuide(this.guideStep ? t(this.guideStep.labelKey) : null);
     this.updateObjectiveArrow();
 
     // Working a lock: presses go to the mini-game, not to the world.

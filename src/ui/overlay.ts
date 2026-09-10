@@ -503,12 +503,6 @@ export class Overlay {
 
   /** Edge arrow toward the vault while it is off screen in the follow camera. */
   /** What the arrow is pointing at, in words. */
-  setGuide(text: string | null): void {
-    const node = el('h1-guide');
-    node.hidden = !text;
-    node.textContent = text ?? '';
-  }
-
   setObjectiveLabel(text: string): void {
     const node = el('h1-arrow').querySelector<HTMLElement>('.obj-label');
     if (node) {
