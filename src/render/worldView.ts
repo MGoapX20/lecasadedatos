@@ -596,6 +596,7 @@ export class WorldView {
       a.lastY = t.y;
       a.phase += moved * 2.4;
       pose.visible = visible;
+      pose.silhouette = t.id === world.playerId;
       pose.x = fineXYToWorldX(level, a.smoothX);
       pose.z = fineXYToWorldZ(level, a.smoothY);
       pose.facingRad = t.facing * DEG;

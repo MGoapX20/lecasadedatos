@@ -5,6 +5,8 @@ import {
   Group,
   InstancedMesh,
   Matrix4,
+  Mesh,
+  MeshBasicMaterial,
   Object3D,
   Quaternion,
   SphereGeometry,
@@ -19,6 +21,9 @@ import type { CharacterModel, ModelLib } from './models';
 
 const UP = new Vector3(0, 1, 0);
 const RIGHT = new Vector3(1, 0, 0);
+// Visible body pixels cover the flat pass; obscured pixels retain its red fill.
+const playerSilhouetteMaterial = new MeshBasicMaterial({ color: 0xff5266,
+  depthTest: false, depthWrite: false, toneMapped: false });
 
 interface PartSpec {
   geo: BufferGeometry;
@@ -31,6 +36,7 @@ interface PartSpec {
 }
 
 export interface CharacterPose {
+  silhouette?: boolean;
   x: number;
   z: number;
   facingRad: number;
@@ -68,7 +74,7 @@ export function blankCharacterPose(): CharacterPose {
  */
 export class BoxCharacterBatch implements CharacterBatch {
   readonly root = new Group();
-  private parts: { mesh: InstancedMesh; spec: PartSpec }[] = [];
+  private parts: { mesh: InstancedMesh; spec: PartSpec; ghost: InstancedMesh }[] = [];
   private scratch = new Object3D();
   private m = new Matrix4();
   private q = new Quaternion();
@@ -153,8 +159,11 @@ export class BoxCharacterBatch implements CharacterBatch {
         mesh.instanceColor = null;
         for (let i = 0; i < capacity; i++) mesh.setColorAt(i, this.color.setHex(0xffffff));
       }
-      this.parts.push({ mesh, spec });
-      this.root.add(mesh);
+      const ghost = new InstancedMesh(spec.geo, playerSilhouetteMaterial, 1);
+      ghost.frustumCulled = false;ghost.visible = false;ghost.renderOrder = 10;
+      mesh.renderOrder = 11;
+      this.parts.push({ mesh, spec, ghost });
+      this.root.add(mesh, ghost);
     }
     this.hideAll();
   }
@@ -162,6 +171,7 @@ export class BoxCharacterBatch implements CharacterBatch {
   hideAll(): void {
     const zero = new Matrix4().makeScale(0, 0, 0);
     for (const p of this.parts) {
+      p.ghost.visible = false;
       for (let i = 0; i < this.capacity; i++) p.mesh.setMatrixAt(i, zero);
       p.mesh.instanceMatrix.needsUpdate = true;
     }
@@ -173,6 +183,7 @@ export class BoxCharacterBatch implements CharacterBatch {
     if (!pose.visible) {
       this.m.makeScale(0, 0, 0);
       for (const p of this.parts) p.mesh.setMatrixAt(index, this.m);
+      if (pose.silhouette) for (const p of this.parts) p.ghost.visible = false;
       return;
     }
     const stride = Math.sin(pose.phase) * 0.62 * pose.moving;
@@ -220,6 +231,9 @@ export class BoxCharacterBatch implements CharacterBatch {
         pose.z + this.m.elements[14],
       );
       p.mesh.setMatrixAt(index, this.m);
+      if (pose.silhouette) {
+        p.ghost.visible = true;p.ghost.setMatrixAt(0,this.m);p.ghost.instanceMatrix.needsUpdate = true;
+      }
       if (pose.tint >= 0 && p.mesh.instanceColor) {
         p.mesh.setColorAt(index, this.color.setHex(pose.tint));
       }
@@ -239,6 +253,7 @@ export class BoxCharacterBatch implements CharacterBatch {
     for (const p of this.parts) {
       p.mesh.geometry.dispose();
       p.mesh.dispose();
+      p.ghost.dispose();
     }
     this.parts = [];
   }
@@ -278,6 +293,7 @@ export function makeGuardBatch(capacity: number, models?: ModelLib): CharacterBa
 const PERSON_HEIGHT = 1.72;
 
 interface Slot {
+  silhouettes?: Mesh[];
   node: Object3D;
   alt: Object3D | null;
   altMixer: AnimationMixer | null;
@@ -353,6 +369,24 @@ export class SkinnedCharacterBatch implements CharacterBatch {
   setPose(index: number, pose: CharacterPose): void {
     const s = this.slots[index];
     if (!s) return;
+    if (pose.silhouette && !s.silhouettes) {
+      s.silhouettes = [];
+      for (const root of [s.node, s.alt]) {
+        if (!root) continue;
+        const meshes: Mesh[] = [];
+        root.traverse(object => { if (object instanceof Mesh) meshes.push(object); });
+        for (const mesh of meshes) {
+          // Share the actual skeleton so the silhouette follows every animation.
+          const ghost = mesh.clone(false);
+          ghost.material = playerSilhouetteMaterial;
+          ghost.position.set(0,0,0);ghost.quaternion.identity();ghost.scale.setScalar(1);
+          ghost.castShadow = false;ghost.receiveShadow = false;
+          ghost.renderOrder = 10;mesh.renderOrder = 11;
+          mesh.add(ghost);s.silhouettes.push(ghost);
+        }
+      }
+    }
+    for (const ghost of s.silhouettes ?? []) ghost.visible = !!pose.silhouette;
     s.visible = pose.visible;
     s.variant = pose.variant && s.alt ? 1 : 0;
     const active = s.variant ? s.alt! : s.node;
