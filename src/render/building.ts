@@ -318,6 +318,13 @@ function propGeometry(level: Level, p: PropDef, buckets: Map<MatKey, Bucket>, mo
     const inst = placeModel(models, modelKey, x, y, z, -rot, p.kind === 'moneyStack' ? 1 : s);
     if (inst) {
       out.push(inst);
+      if (p.kind === 'crate') {
+        for (let i = 1; i < (p.stack ?? 1); i++) {
+          const upper = inst.clone(true);
+          upper.position.y += i * 1.15 * s;
+          out.push(upper);
+        }
+      }
       if (p.kind === 'lamp') {
         push(buckets, 'emissiveGold', new SphereGeometry(0.16, 8, 6).translate(x, 3.7, z));
       }
@@ -348,7 +355,8 @@ function propGeometry(level: Level, p: PropDef, buckets: Map<MatKey, Bucket>, mo
       push(buckets, 'brass', box(4.7 * s, 0.09, 1.05 * s, x, 1.18, z, rot));
       break;
     case 'crate':
-      push(buckets, 'wood', box(1.5 * s, 1.2 * s, 1.5 * s, x, 0.6 * s, z, rot));
+      for (let i = 0; i < (p.stack ?? 1); i++)
+        push(buckets, 'wood', box(1.5 * s, 1.2 * s, 1.5 * s, x, (0.6 + 1.2 * i) * s, z, rot));
       break;
     case 'truck':
       push(buckets, 'redDark', box(6.4 * s, 2.6, 2.6 * s, x, 1.5, z, rot));

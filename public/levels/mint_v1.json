@@ -947,15 +947,6 @@
     {
       "kind": "press",
       "cell": [
-        37,
-        26
-      ],
-      "solid": true,
-      "radius": 2
-    },
-    {
-      "kind": "press",
-      "cell": [
         59,
         26
       ],
@@ -1089,8 +1080,8 @@
     {
       "kind": "crate",
       "cell": [
-        69,
-        27
+        68,
+        37
       ],
       "solid": true,
       "radius": 1.1
@@ -1098,8 +1089,8 @@
     {
       "kind": "crate",
       "cell": [
-        69,
-        31
+        75,
+        37
       ],
       "solid": true,
       "radius": 1.1
@@ -1107,18 +1098,10 @@
     {
       "kind": "crate",
       "cell": [
-        78,
-        27
+        79,
+        37
       ],
-      "solid": true,
-      "radius": 1.1
-    },
-    {
-      "kind": "crate",
-      "cell": [
-        78,
-        35
-      ],
+      "stack": 2,
       "solid": true,
       "radius": 1.1
     },
@@ -1323,10 +1306,6 @@
     ],
     "loads": 3,
     "presses": [
-      [
-        37,
-        26
-      ],
       [
         59,
         26

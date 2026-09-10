@@ -117,6 +117,8 @@ export interface PropDef {
   cell: CellXY;
   rotDeg?: number;
   scale?: number;
+  /** Crates only: boxes stacked vertically on this single floor footprint. */
+  stack?: number;
   /** Blocks movement (rasterised into the walk grid). */
   solid?: boolean;
   radius?: number;
