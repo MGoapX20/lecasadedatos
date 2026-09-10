@@ -84,12 +84,26 @@ export class SnapshotProjector {
       const discovered = objectives
         .filter((o) => o.id.startsWith('foothold.') && o.state !== 'hidden')
         .map((o) => o.id.split('.')[1]);
+      const distance = (entry: (typeof level.json.entries)[number]) => {
+        if (entry.id !== 'dock') return Math.hypot(entry.spawn[0] - p.x, entry.spawn[1] - p.y);
+        // The supplier is both the moving truck and its loading-bay gate.
+        // Its planner spawn is a shop, not the place the visitor is inspecting.
+        let nearest = Math.hypot(w.truck.x - p.x, w.truck.y - p.y);
+        const gate = level.doors.find(d => d.id === 'd_dock_outer');
+        if (gate) {
+          const [x, y, width, height] = gate.rect;
+          nearest = Math.min(nearest, Math.hypot(
+            p.x - Math.max(x, Math.min(x + width, p.x)),
+            p.y - Math.max(y, Math.min(y + height, p.y)),
+          ));
+        }
+        return nearest;
+      };
       const nearest = level.json.entries
         .filter((e) => discovered.includes(e.id))
         .sort(
           (a, b) =>
-            Math.hypot(a.spawn[0] - p.x, a.spawn[1] - p.y) -
-            Math.hypot(b.spawn[0] - p.x, b.spawn[1] - p.y),
+            distance(a) - distance(b),
         )[0];
       if (nearest) focus = nearest.id as EntryId;
     }

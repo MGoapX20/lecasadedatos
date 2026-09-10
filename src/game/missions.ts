@@ -66,7 +66,7 @@ const DISCOVER_CELLS = 9;
 /** Sides of the perimeter that count as having walked round. */
 const SIDES_FOR_RECON = 3;
 /** Ways in that have to be on the list before the recon is called done. */
-const WAYS_FOR_RECON = 2;
+const WAYS_FOR_RECON = 5;
 
 interface FootholdSpec {
   id: string;

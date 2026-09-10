@@ -226,7 +226,7 @@
   "cyber.recon": "Reconnaissance",
   "missions.circle": "Circle the building",
   "cyber.externalRecon": "External recon",
-  "missions.findWays": "Find two ways in",
+  "missions.findWays": "Find all five ways in",
   "cyber.attackSurface": "Attack surface mapping",
   "missions.foothold": "Initial foothold",
   "cyber.initialAccess": "Initial access",

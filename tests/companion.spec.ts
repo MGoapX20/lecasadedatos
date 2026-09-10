@@ -81,6 +81,27 @@ function fixture() {
 }
 
 describe('the companion follows the existing mission board', () => {
+  it('shows supply chain at the loading-bay gate and moving truck, not the planner shop', () => {
+    const f = fixture();
+    f.stand(f.world.truck.x, f.world.truck.y);
+    for (const id of ['vent', 'sewer', 'front', 'side']) {
+      const entry = f.level.json.entries.find(e => e.id === id)!;
+      f.stand(...entry.spawn);
+    }
+    expect(sceneId(f.capture())).toBe('access-side');
+    const gate = f.level.doors.find(d => d.id === 'd_dock_outer')!;
+    const [x, y, width] = gate.rect;
+    f.stand(x + width / 2, y - 2);
+    expect(f.capture().focusEntry).toBe('dock');
+    expect(sceneId(f.capture())).toBe('access-dock');
+    // Follow a delivery to somewhere other than its authored spawn/shop.
+    f.world.truck.x = 30;
+    f.world.truck.y = 62;
+    f.stand(30, 61);
+    expect(f.capture().focusEntry).toBe('dock');
+    expect(sceneId(f.capture())).toBe('access-dock');
+  });
+
   it('tracks recon, discovered footholds, actual entry, lateral movement, and the vault transition', () => {
     const f = fixture();
     expect(f.capture().phase).toBe('recon');
@@ -91,6 +112,7 @@ describe('the companion follows the existing mission board', () => {
           (o) => o.id.startsWith('foothold.') && o.state === 'hidden',
         ).length,
     ).toBeGreaterThanOrEqual(3);
+    f.stand(f.world.truck.x, f.world.truck.y);
     for (const id of ['vent', 'sewer', 'front', 'side']) {
       const e = f.level.json.entries.find((e) => e.id === id)!;
       f.stand(...e.spawn);

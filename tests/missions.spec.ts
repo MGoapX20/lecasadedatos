@@ -54,7 +54,7 @@ describe('the mission board', () => {
     expect(second, 'a discovery is news only once').not.toContain('foothold.vent');
   });
 
-  it('finishes recon once the thief has walked round and found two ways', () => {
+  it('requires all five ways as well as circling the building to finish recon', () => {
     const { m, world, player } = start();
     expect(phase(m, 'recon').done).toBe(false);
     const at = (id: string) => level.json.entries.find((e) => e.id === id)!.spawn;
@@ -62,7 +62,11 @@ describe('the mission board', () => {
     stand(m, world, player, at('sewer')[0] + 3, at('sewer')[1]);
     stand(m, world, player, at('front')[0], at('front')[1]);
     stand(m, world, player, at('side')[0] - 3, at('side')[1]);
-    expect(phase(m, 'recon').done, 'four sides and four ways is plenty').toBe(true);
+    expect(obj(m, 'recon', 'recon.ways').state, 'four ways is not enough').toBe('open');
+    expect(phase(m, 'recon').done).toBe(false);
+    stand(m, world, player, world.truck.x, world.truck.y);
+    expect(obj(m, 'recon', 'recon.ways').state).toBe('done');
+    expect(phase(m, 'recon').done).toBe(true);
     expect(phase(m, 'foothold').active).toBe(true);
   });
 
