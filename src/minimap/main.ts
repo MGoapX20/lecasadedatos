@@ -55,7 +55,7 @@ function draw() {
     ctx.strokeRect(-shop.width/2,-shop.depth/2,shop.width,shop.depth);
     ctx.restore();
   }
-  for(const cell of m.presses)symbol(cell[0]+.5,cell[1]+.5,'$','#c6a667');
+  for(const cell of m.presses)drawMapIcon(ctx,cell[0]+.5,cell[1]+.5,'document','#e7edcf');
   for(const k of m.keys)drawMapIcon(ctx,k.cell[0]+.5,k.cell[1]+.5,
     k.kind==='fuse'?'power':k.kind==='uniform'?'uniform':'key',k.used?'#667078':k.kind==='fuse'?'#59ced1':'#bb97ee');
   const actor=(x:number,y:number,angle:number,color:string,size=1,player=false)=>{

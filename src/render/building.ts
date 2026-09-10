@@ -2,7 +2,6 @@ import {
   BoxGeometry,
   BufferGeometry,
   CircleGeometry,
-  ConeGeometry,
   CylinderGeometry,
   Group,
   Mesh,
@@ -20,6 +19,7 @@ import { FLOOR_COLORS, PALETTE } from './palette';
 import { mergeStatic, type ModelLib } from './models';
 import { signMaterial } from './signs';
 import { surfaces, worldUV } from './textures';
+import { missileHead, uraniumStorage } from './nuclearProps';
 
 const INTERIOR_WALL_H = 2.6;
 /** The shop roof signs, in metres. */
@@ -284,10 +284,8 @@ const PROP_MODEL: Record<string, string> = {
   cabinet: 'cabinet',
   crate: 'crate',
   desk: 'desk',
-  press: 'press',
   truck: 'truck',
   lamp: 'lamp',
-  moneyStack: 'gold',
 };
 
 function placeModel(models: ModelLib, key: string, x: number, y: number, z: number, rotY: number, scale = 1): Object3D | null {
@@ -305,6 +303,14 @@ function propGeometry(level: Level, p: PropDef, buckets: Map<MatKey, Bucket>, mo
   const z = fineXYToWorldZ(level, p.cell[1] + 0.5);
   const rot = ((p.rotDeg ?? 0) * Math.PI) / 180;
   const s = p.scale ?? 1;
+  if (p.kind === 'plant' || p.kind === 'press') {
+    const themed = p.kind === 'plant' ? missileHead() : uraniumStorage();
+    themed.position.set(x, 0, z);
+    themed.rotation.y = -rot;
+    themed.scale.setScalar(s);
+    out.push(themed);
+    return;
+  }
   const modelKey = PROP_MODEL[p.kind];
   if (modelKey && models.props.has(modelKey)) {
     // Model props: the level's rotation is about +y in the box code's frame.
@@ -340,15 +346,6 @@ function propGeometry(level: Level, p: PropDef, buckets: Map<MatKey, Bucket>, mo
     case 'teller':
       push(buckets, 'marbleDark', box(4.6 * s, 1.15, 0.9 * s, x, 0.58, z, rot));
       push(buckets, 'brass', box(4.7 * s, 0.09, 1.05 * s, x, 1.18, z, rot));
-      break;
-    case 'press':
-      push(buckets, 'metal', box(3.0 * s, 1.7, 2.0 * s, x, 0.85, z, rot));
-      push(buckets, 'brass', cyl(0.55 * s, 2.2, x, 1.9, z, 12));
-      push(buckets, 'dark', box(3.2 * s, 0.2, 2.2 * s, x, 1.78, z, rot));
-      break;
-    case 'plant':
-      push(buckets, 'redDark', cyl(0.42 * s, 0.5, x, 0.25, z, 10));
-      push(buckets, 'foliage', new ConeGeometry(0.62 * s, 1.5, 8).translate(x, 1.2, z));
       break;
     case 'crate':
       push(buckets, 'wood', box(1.5 * s, 1.2 * s, 1.5 * s, x, 0.6 * s, z, rot));
@@ -653,7 +650,7 @@ export function buildBuilding(level: Level, models: ModelLib): BuildingView {
   const propBuckets = new Map<MatKey, Bucket>();
   const modelProps: Object3D[] = [];
   const namedProps = new Map<string, Object3D>();
-  // The presses the money is lifted from have to stay individual objects: the
+  // The uranium racks that hold documents stay individual objects: the
   // mission glow outlines one of them at a time, and there is nothing to
   // outline once four presses are one mesh. Four extra draw calls.
   const wanted = new Set((level.json.exfil?.presses ?? []).map((c) => `${c[0]},${c[1]}`));

@@ -42,37 +42,22 @@ function computer(ctx: CanvasRenderingContext2D): void {
   ctx.stroke();
 }
 
-/** A burger: the food shop. */
+/** An atom: the supply stand retains its authored food sign key. */
 function food(ctx: CanvasRenderingContext2D): void {
-  ctx.lineWidth = 12;
-  ctx.lineCap = 'round';
-  // Bun top.
-  ctx.beginPath();
-  ctx.moveTo(-96, -18);
-  ctx.arc(0, -18, 96, Math.PI, 0);
-  ctx.closePath();
-  ctx.fillStyle = 'rgba(255,190,80,0.28)';
-  ctx.fill();
-  ctx.stroke();
-  // Filling and base.
-  ctx.beginPath();
-  ctx.moveTo(-96, 12);
-  ctx.lineTo(96, 12);
-  ctx.moveTo(-90, 48);
-  ctx.lineTo(90, 48);
-  ctx.stroke();
-  ctx.beginPath();
-  ctx.moveTo(-96, 74);
-  ctx.arc(0, 74, 96, 0, Math.PI);
-  ctx.closePath();
-  ctx.fillStyle = 'rgba(255,190,80,0.28)';
-  ctx.fill();
-  ctx.stroke();
+  ctx.lineWidth = 8;
+  for (const angle of [0, Math.PI / 3, -Math.PI / 3]) {
+    ctx.beginPath();
+    ctx.ellipse(0, 0, 108, 37, angle, 0, Math.PI * 2);
+    ctx.stroke();
+  }
+  ctx.fillStyle = '#c8f780';
+  ctx.beginPath();ctx.arc(0, 0, 15, 0, Math.PI * 2);ctx.fill();
+  ctx.beginPath();ctx.arc(108, 0, 8, 0, Math.PI * 2);ctx.fill();
 }
 
 const STYLES: Record<SignKind, SignStyle> = {
   computer: { ink: '#7fe6ff', draw: computer },
-  food: { ink: '#ffbe50', draw: food },
+  food: { ink: '#c8f780', draw: food },
 };
 
 function roundRect(ctx: CanvasRenderingContext2D, x: number, y: number, w: number, h: number, r: number): void {

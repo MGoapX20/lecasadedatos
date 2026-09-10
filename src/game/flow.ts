@@ -193,6 +193,7 @@ export class GameFlow {
     this.stageRevision++;
     this.adminStartSwarm = false;
     this.state = next;
+    this.d.view.setBaseStage(next);
     this.d.view.setGuideTargets([]);
     this.d.overlay.setEntranceIndicators([]);
     this.stateMs = 0;
@@ -436,22 +437,22 @@ export class GameFlow {
     }
     if (player.carrying) {
       return w.atVan(player)
-        ? { key: 'exfil-drop', icon: '\u{1F4B0}', title: t('cue.dropLoad'), press: t('cue.space'), hint: t('cue.dropLoadHint') }
+        ? { key: 'exfil-drop', icon: '\u{1F4C4}', title: t('cue.dropLoad'), press: t('cue.space'), hint: t('cue.dropLoadHint') }
         : {
             key: 'exfil-carry',
-            icon: '\u{1F4B0}',
+            icon: '\u{1F4C4}',
             title: t('cue.carrying'),
             hint: t('cue.carryingHint'),
             waiting: !w.van.parked,
           };
     }
     if (w.pressInReach(player)) {
-      return { key: 'exfil-take', icon: '\u{1F4B5}', title: t('cue.takeLoad'), press: t('cue.space'), hint: t('cue.takeLoadHint') };
+      return { key: 'exfil-take', icon: '\u{1F4C4}', title: t('cue.takeLoad'), press: t('cue.space'), hint: t('cue.takeLoadHint') };
     }
     // Same offer, greyed key: the money is on the presses, he is not at one yet.
     return {
       key: 'exfil-run',
-      icon: '\u{1F4B5}',
+      icon: '\u{1F4C4}',
       title: t('cue.takeLoad'),
       press: t('cue.space'),
       hint: t('cue.takeLoadFar'),

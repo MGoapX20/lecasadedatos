@@ -31,6 +31,7 @@ import { coneSamples, type ConeSample } from '../level/visibility';
 import type { Plan } from '../planner/types';
 import { planCellCenterX, planCellCenterY } from '../sim/planFollow';
 import { PALETTE } from './palette';
+import { secretDocumentTexture } from './documents';
 
 /** A vision cone clipped against the walls it actually cannot see through. */
 /** How wide the bright band along the far edge of a cone is, in world units. */
@@ -303,7 +304,7 @@ export class RouteTrails {
   }
 }
 
-/** Banknotes erupting from the presses when somebody reaches the vault. */
+/** Classified pages scattering as documents are reached or extracted. */
 export class MoneyBurst {
   readonly mesh: InstancedMesh;
   private vel: Float32Array;
@@ -316,9 +317,10 @@ export class MoneyBurst {
 
   constructor(capacity = 260) {
     this.capacity = capacity;
-    const geo = new PlaneGeometry(0.34, 0.17);
+    const geo = new PlaneGeometry(0.26, 0.35);
     const material = new MeshBasicMaterial({
-      color: 0xe8dfae,
+      color: 0xffffff,
+      map: secretDocumentTexture(),
       side: DoubleSide,
       transparent: true,
       opacity: 0.96,

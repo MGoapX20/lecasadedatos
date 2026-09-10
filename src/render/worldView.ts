@@ -28,6 +28,8 @@ import type { GuideTarget } from '../game/walkthrough';
 import type { MarkRef } from '../game/missions';
 import { cameraFacingAt } from '../sim/vision';
 import { buildBuilding, type BuildingView } from './building';
+import { BaseBanners } from './baseBanners';
+import { makeSecretDocuments } from './documents';
 import type { ModelLib } from './models';
 import { mat } from './materials';
 import { buildCity, type CityView } from './city';
@@ -71,6 +73,8 @@ export class WorldView {
   readonly root = new Group();
   readonly building: BuildingView;
   readonly city: CityView;
+  readonly baseBanners: BaseBanners;
+  setBaseStage(stage: string): void { this.baseBanners.setStage(stage); }
   readonly trails = new RouteTrails();
   readonly ribbons = new WayRibbons();
   /** The supplier's truck, driven straight from the simulation's pose. */
@@ -181,6 +185,8 @@ export class WorldView {
   ) {
     this.building = buildBuilding(level, models);
     this.root.add(this.building.root);
+    this.baseBanners = new BaseBanners(level);
+    this.root.add(this.baseBanners.root);
     this.city = buildCity(level, models);
     this.root.add(this.city.root);
     const truckTpl = models.props.get('truck');
@@ -358,7 +364,7 @@ export class WorldView {
       van.add(bundle);
       this.vanLoads.push(bundle);
     }
-    // What he is carrying, on him: a big bundle held at chest height, a gold
+    // What he is carrying, on him: classified files held at chest height, a cool
     // glow under it and a ring on the floor. Three signals, because at this
     // camera angle one is easy to miss.
     this.carried = new Group();
@@ -366,7 +372,7 @@ export class WorldView {
     const glow = new Mesh(
       new SphereGeometry(0.5, 12, 10),
       new MeshBasicMaterial({
-        color: PALETTE.gold,
+        color: 0xb9e6f4,
         transparent: true,
         opacity: 0.22,
         depthWrite: false,
@@ -376,23 +382,17 @@ export class WorldView {
     this.carried.add(held, glow);
     this.carried.visible = false;
     this.root.add(this.carried);
-    this.carryRing = makeMarkerRing(PALETTE.gold, 0.74, 1.0);
+    this.carryRing = makeMarkerRing(0xb9e6f4, 0.74, 1.0);
     this.carryRing.visible = false;
     this.root.add(this.carryRing);
   }
 
   /**
-   * One strapped block of notes. Deliberately oversized: from the overhead
-   * camera a realistically sized bundle in a man's arms is four pixels, and the
-   * one thing the visitor has to be able to see in this phase is who is holding
-   * the money.
+   * A clearly stamped stack of classified documents, large enough to read from
+   * the overhead camera while carried or stacked in the escape vehicle.
    */
   private makeBundle(scale = 1): Object3D {
-    const g = new Group();
-    const paper = new Mesh(new BoxGeometry(0.6 * scale, 0.4 * scale, 0.46 * scale), mat('paper'));
-    const band = new Mesh(new BoxGeometry(0.63 * scale, 0.13 * scale, 0.49 * scale), mat('emissiveGold'));
-    g.add(paper, band);
-    return g;
+    return makeSecretDocuments(scale);
   }
 
   setCutaway(cut: boolean): void {
@@ -631,12 +631,11 @@ export class WorldView {
       }
       if (this.thiefMarks.instanceColor) {
         // The disc carries the colour of the way in; the jumpsuit stays red.
-        // Except with the money in his arms, when it turns gold: a line of gold
-        // dots streaming out through the hole is the whole point of the phase.
+        // Classified documents get an icy-white cue as they leave the base.
         this.thiefMarks.setColorAt(
           slot,
           this.markColor.setHex(
-            t.carrying ? PALETTE.gold : t.id === world.playerId ? pose.tint : wayColor(t.entryId),
+            t.carrying ? 0xb9e6f4 : t.id === world.playerId ? pose.tint : wayColor(t.entryId),
           ),
         );
       }
@@ -991,6 +990,7 @@ export class WorldView {
   }
 
   dispose(): void {
+    this.baseBanners.dispose();
     this.thieves.dispose();
     this.guards.dispose();
     for (const c of this.guardCones) c.dispose();

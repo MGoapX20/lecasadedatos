@@ -1,13 +1,13 @@
 # La Casa de Datos — The AI Heist
 
-A 3D browser game built as a fair station. A visitor breaks into a bank, then
-defends the same bank against an AI. The point of the station is the gap between
+A 3D browser game built as a fair station. A visitor infiltrates a nuclear base, then
+defends the base against an AI. The point of the station is the gap between
 those two experiences.
 
 ## The visit, in about three and a half minutes
 
 1. **Attract loop.** The Mint at night, with a real AI swarm streaming through it.
-2. **Round 1 — you are the thief.** Get inside, reach the vault, start the presses.
+2. **Round 1 — you are the attacker.** Get inside, reach the vault, and extract TOP SECRET documents.
 3. **Round 2a — you are the chief of security.** One human-paced thief comes. You
    usually catch him.
 4. **Round 2b — the AI comes.** Dozens of agents, all with different plans, at once.
