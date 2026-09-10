@@ -11,6 +11,8 @@ import {
   SRGBColorSpace,
   Vector2,
   WebGLRenderer,
+  WebGLRenderTarget,
+  HalfFloatType,
 } from 'three';
 import { EffectComposer } from 'three/examples/jsm/postprocessing/EffectComposer.js';
 import { RenderPass } from 'three/examples/jsm/postprocessing/RenderPass.js';
@@ -73,7 +75,7 @@ export interface Stage {
 }
 
 export function createStage(canvas: HTMLCanvasElement, director: CameraDirector): Stage {
-  const renderer = new WebGLRenderer({ canvas, antialias: true, powerPreference: 'high-performance' });
+  const renderer = new WebGLRenderer({ canvas, antialias: true, stencil: true, powerPreference: 'high-performance' });
   renderer.outputColorSpace = SRGBColorSpace;
   renderer.toneMapping = ACESFilmicToneMapping;
   // The building is white marble under a lot of point lights; at 1.0 the floor
@@ -147,7 +149,12 @@ export function createStage(canvas: HTMLCanvasElement, director: CameraDirector)
     grainPass = null;
     bloomPass = null;
     if (quality === 'low') return;
-    const c = new EffectComposer(renderer);
+    // Objective silhouettes use stencil in the scene pass, on every quality.
+    const size = renderer.getDrawingBufferSize(new Vector2());
+    const target = new WebGLRenderTarget(size.x, size.y, { type: HalfFloatType, stencilBuffer: true });
+    const c = new EffectComposer(renderer, target);
+    const logicalSize = renderer.getSize(new Vector2());
+    c.setSize(logicalSize.x, logicalSize.y);
     c.addPass(new RenderPass(scene, director.camera));
     bloomPass = new UnrealBloomPass(
       new Vector2(canvas.clientWidth || 1280, canvas.clientHeight || 720),

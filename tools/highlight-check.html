@@ -1,0 +1,34 @@
+<!doctype html>
+<html lang="en"><meta charset="utf-8"><title>Highlight silhouette check</title>
+<style>body{margin:20px;background:#20252b;color:white;font:16px system-ui} main{display:grid;grid-template-columns:repeat(3,240px);gap:16px}canvas{display:block}p{margin:6px 0 20px}h1{font-size:22px}</style>
+<h1>Outer silhouette — detailed surfaces stay clean</h1><main></main>
+<script type="module">
+import * as T from 'three';
+import { EffectComposer } from 'three/examples/jsm/postprocessing/EffectComposer.js';
+import { RenderPass } from 'three/examples/jsm/postprocessing/RenderPass.js';
+import { OutputPass } from 'three/examples/jsm/postprocessing/OutputPass.js';
+import { OutlineGlow } from '/src/render/fx.ts';
+for (const post of [false, true]) for (const angle of [0, 55, 130]) {
+  const card = document.createElement('section'); document.querySelector('main').append(card);
+  const renderer = new T.WebGLRenderer({antialias:true, stencil:true});
+  renderer.setSize(240,240); card.append(renderer.domElement);
+  const scene = new T.Scene(); scene.background = new T.Color('#303841');
+  scene.add(new T.HemisphereLight(0xffffff,0x334455,3));
+  const object = new T.Group(); scene.add(object);
+  const slab = new T.Mesh(new T.BoxGeometry(2.5,3,0.65),new T.MeshStandardMaterial({color:0x686b75})); object.add(slab);
+  const wheel = new T.Mesh(new T.TorusGeometry(0.9,0.10,10,32),new T.MeshStandardMaterial({color:0xe0b04b}));
+  wheel.position.z=0.5; object.add(wheel);
+  for(let n=0;n<8;n++) {
+    const spoke=new T.Mesh(new T.BoxGeometry(0.06,1.7,0.08),wheel.material);
+    spoke.rotation.z=n*Math.PI/8; spoke.position.z=0.5; object.add(spoke);
+  }
+  const glow=new OutlineGlow(); glow.set([object]);
+  const camera=new T.PerspectiveCamera(40,1,0.1,50);
+  const a=angle*Math.PI/180;camera.position.set(6*Math.sin(a),2.6,6*Math.cos(a));camera.lookAt(0,0,0);
+  if(post){
+    const composer=new EffectComposer(renderer,new T.WebGLRenderTarget(240,240,{type:T.HalfFloatType,stencilBuffer:true}));
+    composer.addPass(new RenderPass(scene,camera));composer.addPass(new OutputPass());composer.render();
+  } else renderer.render(scene,camera);
+  const label=document.createElement('p');label.textContent=`${post?'Post-processing':'Direct rendering'} · ${angle}°`;card.append(label);
+}
+</script></html>

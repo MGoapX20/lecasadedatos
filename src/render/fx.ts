@@ -1,5 +1,8 @@
 import {
   AdditiveBlending,
+  AlwaysStencilFunc,
+  NotEqualStencilFunc,
+  ReplaceStencilOp,
   BufferAttribute,
   BackSide,
   Box3,
@@ -22,7 +25,7 @@ import {
   Vector3,
   CircleGeometry,
 } from 'three';
-import { mergeGeometries } from 'three/examples/jsm/utils/BufferGeometryUtils.js';
+import { mergeGeometries, mergeVertices } from 'three/examples/jsm/utils/BufferGeometryUtils.js';
 import { fineXYToWorldX, fineXYToWorldZ, type Level } from '../level/loader';
 import { coneSamples, type ConeSample } from '../level/visibility';
 import type { Plan } from '../planner/types';
@@ -449,9 +452,9 @@ export class Pulse {
  * with no other job cannot be misread as one.
  *
  * Built as an inverted hull: the object's own geometry, pushed out along its
- * normals and drawn back-faces-only, so it shows exactly where the silhouette
- * is and nowhere else. That is why it hugs a door rather than sitting in a box
- * around it, and why it costs no post-processing pass on a three-screen wall.
+ * normals and drawn back-faces-only. An unexpanded stencil mask of all selected
+ * surfaces removes the internal outlines: wheels, handles and clothing details
+ * cannot paint green over the object itself. No full-screen outline pass needed.
  *
  * Two hulls per object — a solid green edge and a wider faint one — because a
  * single line reads as a diagram and the wide one is what makes it a glow. The
@@ -464,7 +467,7 @@ const OUTLINE_TIGHT = 0.10;
 const OUTLINE_WIDE = 0.18;
 
 export class OutlineGlow {
-  /** One pair of hulls per object we have ever been asked to light. */
+  /** Surface masks and outline hulls for every object we have highlighted. */
   private built = new Map<Object3D, Mesh[]>();
   private live: Mesh[] = [];
   private t = 0;
@@ -563,6 +566,26 @@ export class OutlineGlow {
       // the front doors left their outline behind the moment they opened.
       m.getWorldScale(worldScale);
       const unit = Math.max(1e-4, (worldScale.x + worldScale.y + worldScale.z) / 3);
+      // Mask the complete object before drawing any expanded hulls. Keeping
+      // each mask on its source mesh follows swinging leaves and moving parts.
+      const mask = new Mesh(geo.clone(), new MeshBasicMaterial({
+        side: DoubleSide,
+        transparent: true,
+        colorWrite: false,
+        depthWrite: false,
+        depthTest: false,
+        stencilWrite: true,
+        stencilRef: 1,
+        stencilFunc: AlwaysStencilFunc,
+        stencilZPass: ReplaceStencilOp,
+      }));
+      mask.userData.baseOpacity = 1;
+      mask.userData.outlineMask = true;
+      mask.renderOrder = 1;
+      mask.frustumCulled = false;
+      mask.visible = false;
+      m.add(mask);
+      hulls.push(mask);
       for (const [swell, opacity] of [
         [OUTLINE_TIGHT * scale, 1],
         [OUTLINE_WIDE * scale, 0.18],
@@ -580,6 +603,10 @@ export class OutlineGlow {
             depthWrite: false,
             // Keep every objective's green outline visible on bright surfaces.
             blending: NormalBlending,
+            // Only pixels outside the union of the original surfaces survive.
+            stencilWrite: true,
+            stencilRef: 1,
+            stencilFunc: NotEqualStencilFunc,
           }),
         );
         mesh.userData.baseOpacity = opacity;
@@ -619,11 +646,15 @@ function forEachSolid(source: Object3D, fn: (m: Mesh) => void): void {
 function strippedGeometry(m: Mesh): BufferGeometry | null {
   const g = m.geometry.clone();
   for (const name of Object.keys(g.attributes)) {
-    if (name !== 'position' && name !== 'normal') g.deleteAttribute(name);
+    if (name !== 'position') g.deleteAttribute(name);
   }
   if (!g.attributes.position) return null;
-  if (!g.attributes.normal) g.computeVertexNormals();
-  return g;
+  // Asset normals split at hard edges. Inflating those disconnected faces
+  // leaves gaps at corners; weld positions before generating hull normals.
+  const welded = mergeVertices(g);
+  welded.computeVertexNormals();
+  g.dispose();
+  return welded;
 }
 
 /** Push every vertex out along its normal, which is what makes it a hull. */
