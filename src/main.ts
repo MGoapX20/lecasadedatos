@@ -88,7 +88,7 @@ async function boot(): Promise<void> {
     () => flow.tickSim(),
     (_alpha, dtMs) => {
       const state = input.update(dtMs / 1000);
-      // Middle-drag swings the view; grab-the-world, so the scene follows the mouse.
+      // Middle-drag or held Q/E swings the view through the same orbit controls.
       director.orbitBy(state.orbit.dx * ORBIT_AZ_PER_PX, state.orbit.dy * ORBIT_PITCH_PER_PX);
       if (input.pollMenuButton()) toggleMenu();
       if (menu.open) menu.update(state, dtMs);

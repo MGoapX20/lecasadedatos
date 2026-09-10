@@ -898,6 +898,9 @@ export function buildBuilding(level: Level, models: ModelLib): BuildingView {
     ] as const) {
       const g = new Group();
       const isSewer = p.kind === 'sewer';
+      // Flat entrances need a surface border: an inverted hull sinks into
+      // the pavement and only leaves a crescent visible from oblique views.
+      g.userData.highlightFootprint = { circular: isSewer, radius: isSewer ? 0.75 : 0.6, y: 0.17 };
       const ring = new Mesh(
         isSewer ? new CylinderGeometry(0.75, 0.75, 0.14, 16) : new BoxGeometry(1.2, 0.12, 1.2),
         mat('metal'),

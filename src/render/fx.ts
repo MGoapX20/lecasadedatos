@@ -14,6 +14,7 @@ import {
   Matrix4,
   Mesh,
   MeshBasicMaterial,
+  NormalBlending,
   PlaneGeometry,
   RingGeometry,
   CylinderGeometry,
@@ -452,15 +453,15 @@ export class Pulse {
  * is and nowhere else. That is why it hugs a door rather than sitting in a box
  * around it, and why it costs no post-processing pass on a three-screen wall.
  *
- * Two hulls per object — a tight bright one and a wider faint one — because a
+ * Two hulls per object — a solid green edge and a wider faint one — because a
  * single line reads as a diagram and the wide one is what makes it a glow. The
  * bloom in the composer does the rest.
  *
  * The hulls are children of the object they outline, so a swinging door, a
  * lorry on its round and a van pulling up all carry their own highlight.
  */
-const OUTLINE_TIGHT = 0.035;
-const OUTLINE_WIDE = 0.11;
+const OUTLINE_TIGHT = 0.10;
+const OUTLINE_WIDE = 0.18;
 
 export class OutlineGlow {
   /** One pair of hulls per object we have ever been asked to light. */
@@ -485,14 +486,14 @@ export class OutlineGlow {
     this.set([]);
   }
 
-  /** A slow breath, well under the pace of anything else on screen. */
+  /** Only the halo breathes; the solid edge stays fully opaque. */
   update(dt: number): void {
     if (!this.live.length) return;
     this.t += dt;
     const k = 0.72 + Math.sin(this.t * 1.9) * 0.28;
     for (const m of this.live) {
       const base = m.userData.baseOpacity as number;
-      (m.material as MeshBasicMaterial).opacity = base * (0.55 + k * 0.45);
+      (m.material as MeshBasicMaterial).opacity = base === 1 ? 1 : base * (0.55 + k * 0.45);
     }
   }
 
@@ -511,13 +512,46 @@ export class OutlineGlow {
   private hullsFor(source: Object3D): Mesh[] {
     const cached = this.built.get(source);
     if (cached) return cached;
+    const footprint = source.userData.highlightFootprint as
+      { circular: boolean; radius: number; y: number } | undefined;
+    if (footprint) {
+      const hulls = [OUTLINE_TIGHT, OUTLINE_WIDE].map((width, i) => {
+        // Four segments form a square vent border; a sewer gets a round one.
+        const factor = footprint.circular ? 1 : Math.SQRT2;
+        const geo = new RingGeometry(
+          footprint.radius * factor,
+          (footprint.radius + width) * factor,
+          footprint.circular ? 64 : 4,
+          1,
+          footprint.circular ? 0 : Math.PI / 4,
+        );
+        geo.rotateX(-Math.PI / 2);
+        const opacity = i === 0 ? 1 : 0.18;
+        const mesh = new Mesh(geo, new MeshBasicMaterial({
+          color: PALETTE.highlight,
+          side: DoubleSide,
+          transparent: true,
+          opacity,
+          toneMapped: false,
+          depthWrite: false,
+          blending: NormalBlending,
+        }));
+        mesh.position.y = footprint.y + (i === 0 ? 0.002 : 0);
+        mesh.userData.baseOpacity = opacity;
+        mesh.renderOrder = i === 0 ? 3 : 2;
+        mesh.visible = false;
+        source.add(mesh);
+        return mesh;
+      });
+      this.built.set(source, hulls);
+      return hulls;
+    }
     source.updateMatrixWorld(true);
     // Size the swell from the whole object, so one thing gets one outline
-    // weight: 3.5 cm around a door is an outline, and around its handle it is
-    // a blob.
+    // weight, including its handles and other small parts.
     const bounds = new Box3().setFromObject(source);
     const span = bounds.getSize(new Vector3()).length();
-    const scale = Math.min(1.6, Math.max(0.35, span / 3));
+    const scale = Math.min(1.6, Math.max(0.65, span / 3));
     const hulls: Mesh[] = [];
     const worldScale = new Vector3();
     forEachSolid(source, (m) => {
@@ -530,7 +564,7 @@ export class OutlineGlow {
       m.getWorldScale(worldScale);
       const unit = Math.max(1e-4, (worldScale.x + worldScale.y + worldScale.z) / 3);
       for (const [swell, opacity] of [
-        [OUTLINE_TIGHT * scale, 0.85],
+        [OUTLINE_TIGHT * scale, 1],
         [OUTLINE_WIDE * scale, 0.18],
       ] as const) {
         const hull = geo.clone();
@@ -542,8 +576,10 @@ export class OutlineGlow {
             side: BackSide,
             transparent: true,
             opacity,
+            toneMapped: false,
             depthWrite: false,
-            blending: AdditiveBlending,
+            // Keep every objective's green outline visible on bright surfaces.
+            blending: NormalBlending,
           }),
         );
         mesh.userData.baseOpacity = opacity;

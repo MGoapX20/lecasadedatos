@@ -15,7 +15,7 @@ export interface PointerState {
   virtual: boolean;
 }
 
-/** Middle-drag view rotation, in pixels since the last frame. */
+/** View rotation from middle-drag or Q/E, in equivalent pixels this frame. */
 export interface OrbitDrag {
   dx: number;
   dy: number;
@@ -47,6 +47,7 @@ function stepEdge(e: Edge, down: boolean): void {
 }
 
 const MIDDLE = 1;
+const KEY_ORBIT_PIXELS_PER_SECOND = 240;
 
 const MOVE_KEYS: Record<string, [number, number]> = {
   ArrowUp: [0, -1],
@@ -157,6 +158,9 @@ export class InputManager {
     // A drag that ends off-window (or an alt-tab) must not leave the view stuck.
     const endOrbit = () => {
       this.orbiting = false;
+      this.orbitDx = 0;
+      this.orbitDy = 0;
+      this.keys.clear();
     };
     const aux = (e: MouseEvent) => {
       if (e.button === MIDDLE) e.preventDefault();
@@ -320,9 +324,10 @@ export class InputManager {
     s.pointer.click.pressed = click;
     this.mouseClickQueued = false;
     s.pointer.moved = false;
-    s.orbit.dx = this.orbitDx;
+    const keyOrbit = Number(this.keys.has('KeyE')) - Number(this.keys.has('KeyQ'));
+    s.orbit.dx = this.orbitDx + keyOrbit * KEY_ORBIT_PIXELS_PER_SECOND * dtSec;
     s.orbit.dy = this.orbitDy;
-    s.orbit.active = this.orbiting;
+    s.orbit.active = this.orbiting || keyOrbit !== 0;
     this.orbitDx = 0;
     this.orbitDy = 0;
     return s;

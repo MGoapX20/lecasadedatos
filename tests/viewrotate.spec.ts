@@ -120,6 +120,30 @@ describe('middle button in the input manager', () => {
     return new InputManager(element, () => ({ w: 1920, h: 1080 }));
   }
 
+  it('rotates with held Q/E, cancels opposite keys, and stops on release', () => {
+    const im = manager();
+    fire('keydown', { code: 'KeyQ' });
+    expect(im.update(1 / 60).orbit).toEqual({ dx: -4, dy: 0, active: true });
+    expect(im.update(1 / 30).orbit.dx).toBe(-8);
+    expect(im.state.move).toEqual({ x: 0, y: 0 });
+    fire('keydown', { code: 'KeyE' });
+    expect(im.update(1 / 60).orbit.dx).toBe(0);
+    fire('keyup', { code: 'KeyQ' });
+    expect(im.update(1 / 60).orbit.dx).toBe(4);
+    fire('keyup', { code: 'KeyE' });
+    expect(im.update(1 / 60).orbit).toEqual({ dx: 0, dy: 0, active: false });
+  });
+
+  it('combines keyboard rotation with mouse drag and clears both on blur', () => {
+    const im = manager();
+    fire('keydown', { code: 'KeyE' });
+    fire('mousedown', { button: 1, clientX: 10, clientY: 10 });
+    fire('mousemove', { clientX: 30, clientY: 15 });
+    expect(im.update(1 / 60).orbit).toEqual({ dx: 24, dy: 5, active: true });
+    fire('blur', {});
+    expect(im.update(1 / 60).orbit).toEqual({ dx: 0, dy: 0, active: false });
+  });
+
   it('reports the drag once and only while the button is held', () => {
     const im = manager();
     fire('mousedown', { button: 1, clientX: 100, clientY: 100 });

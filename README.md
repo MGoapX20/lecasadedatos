@@ -75,6 +75,7 @@ both `index.html` and `red-team.html`.
 | | Keyboard | Mouse | Gamepad |
 |---|---|---|---|
 | Move / cursor | Arrows or WASD | click the floor to walk | left stick or d-pad |
+| Rotate view | Hold Q / E | middle-button drag (also tilts) | — |
 | Start / advance a screen | **Space only** | — | A |
 | Confirm | Enter or Space | click | A |
 | Alarm (round 2) | X | on-screen | X |
