@@ -9,7 +9,7 @@ const commandStatus = document.querySelector<HTMLElement>('#command-status')!;
 const channel = new BroadcastChannel(adminChannelName());
 let selected = '';
 let pending: { id: string; at: number } | null = null;
-const empty: Snapshot = { stage: 'attract', elapsedMs: 0, paused: false, catches: true, timers: true, uniform: false, power: true, hasPlayer: false, assisted: false, waitingForSwarm: false };
+const empty: Snapshot = { stage: 'attract', elapsedMs: 0, paused: false, catches: true, timers: true, missions: false, uniform: false, power: true, hasPlayer: false, assisted: false, waitingForSwarm: false };
 const state = () => sessions.get(selected)?.state ?? empty;
 function send(method: 'action' | 'set', name: string, value?: boolean) {
   if (!sessions.has(selected)) throw new Error('Open and select a game tab first.');

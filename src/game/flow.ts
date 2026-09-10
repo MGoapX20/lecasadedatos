@@ -133,6 +133,7 @@ export class GameFlow {
   private lastAlarmState = false;
   paused = false;
   timersEnabled = true;
+  missionsVisible = false;
   adminAssisted = false;
   private stageRevision = 0;
   private adminStartSwarm = false;
@@ -1633,7 +1634,12 @@ export class GameFlow {
     }
   }
 
-  setAdminOption(option: 'catches' | 'timers' | 'uniform' | 'power', enabled: boolean): void {
+  setAdminOption(option: 'catches' | 'timers' | 'uniform' | 'power' | 'missions', enabled: boolean): void {
+    if (option === 'missions') {
+      this.missionsVisible = enabled;
+      this.d.overlay.setMissionsVisible(enabled);
+      return;
+    }
     this.adminAssisted = true;
     if (option === 'catches') this.world.catchesEnabled = enabled;
     if (option === 'timers') { this.timersEnabled = enabled; this.idleMs = 0; }
@@ -1645,6 +1651,7 @@ export class GameFlow {
     return {
       stage: this.state, elapsedMs: this.stateMs, paused: this.paused,
       catches: this.world.catchesEnabled, timers: this.timersEnabled,
+      missions: this.missionsVisible,
       uniform: !!this.world.player && this.world.isDisguised(this.world.player),
       power: !this.world.camerasDown, hasPlayer: !!this.world.player,
       assisted: this.adminAssisted, waitingForSwarm: this.adminStartSwarm,

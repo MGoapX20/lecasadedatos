@@ -28,6 +28,9 @@ Links open in new tabs so the current test session stays intact.
 - Power controls the cameras immediately. Disabled power stays off until restored
   or the world is reset. Uniform and power return to normal on a fresh round.
 - Settings are in memory only. Reload restores normal catches and timers.
+  The mission board is hidden by default; **Show mission board** restores it without
+  affecting objective tracking or highlights. Its value lasts until game reload,
+  and it can be changed even while paused. This display toggle alone does not mark a visit as assisted.
   Admin-assisted visits do not submit leaderboard scores.
 
 ## Agent workflow (browser UI)
@@ -49,6 +52,7 @@ Stable DOM test IDs:
 | Pause | `admin-paused` |
 | Catches / timers | `admin-catches`, `admin-timers` |
 | Uniform / power | `admin-uniform`, `admin-power` |
+| Show mission board | `admin-missions` |
 | Close / error | `admin-close`, `admin-error` |
 
 ## Automated test harnesses
@@ -61,6 +65,7 @@ admin.getState(); // stage, elapsedMs, paused, catches, timers, uniform, power,
 admin.action('startRound1'); // also skip, resetStage, restart
 admin.set('catches', false); // also timers, uniform, power, paused
 admin.set('timers', false);
+admin.set('missions', true); // show the hidden-by-default mission board
 admin.show();
 admin.hide();
 ```

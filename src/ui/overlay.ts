@@ -276,10 +276,19 @@ export class Overlay {
   }
 
   /** The phase board: heist on the left, the same move in security on the right. */
+  private missionsVisible = false;
+  private lastMissions: Phase[] | null = null;
+
+  setMissionsVisible(visible: boolean): void {
+    this.missionsVisible = visible;
+    this.renderMissions(this.lastMissions);
+  }
+
   private renderMissions(phases: Phase[] | null): void {
+    this.lastMissions = phases;
     const panel = el('h1-missions');
-    panel.classList.toggle('on', !!phases);
-    if (!phases) return;
+    panel.classList.toggle('on', this.missionsVisible && !!phases);
+    if (!this.missionsVisible || !phases) return;
     const list = el('h1-phases');
     if (list.children.length !== phases.length) {
       list.textContent = '';

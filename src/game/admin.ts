@@ -22,6 +22,7 @@ export function mountAdmin(flow: AdminHost, closeMenu: () => void, standalone = 
     <label><input type="checkbox" data-option="timers" data-testid="admin-timers"> Stage timers enabled</label>
     <label><input type="checkbox" data-option="uniform" data-testid="admin-uniform"> Player wearing uniform</label>
     <label><input type="checkbox" data-option="power" data-testid="admin-power"> Camera power enabled</label>
+    <label><input type="checkbox" data-option="missions" data-testid="admin-missions"> Show mission board</label>
     <p>${standalone ? 'Changes apply to the selected game until that game reloads.' : 'F3 opens/closes · Changes last until reload.'} Timers off also disables idle resets; guards and mini-games keep running. Uniform requires a player. An alarm still defeats the disguise.</p>
     <p>Admin-assisted visits are excluded from the leaderboard.</p>
     <nav aria-label="Game URLs" data-testid="admin-urls"><h3>Game URLs</h3><ul></ul></nav>
@@ -58,7 +59,7 @@ export function mountAdmin(flow: AdminHost, closeMenu: () => void, standalone = 
     const s = flow.adminStatus;
     const text = `${s.stage} · ${(s.elapsedMs / 1000).toFixed(1)}s${s.assisted ? ' · TEST VISIT' : ''}${s.waitingForSwarm ? ' · preparing routes…' : ''}`;
     if (text !== lastStatus) { status.textContent = text; lastStatus = text; }
-    for (const option of ['catches', 'timers', 'uniform', 'power'] as const) {
+    for (const option of ['catches', 'timers', 'uniform', 'power', 'missions'] as const) {
       const input = root.querySelector<HTMLInputElement>(`[data-option="${option}"]`)!;
       input.checked = s[option];
       input.disabled = option === 'uniform' && !s.hasPlayer;
@@ -81,7 +82,7 @@ export function mountAdmin(flow: AdminHost, closeMenu: () => void, standalone = 
     set: (option: string, enabled: boolean) => {
       if (typeof enabled !== 'boolean') throw new Error('Admin options require a boolean');
       if (option === 'paused') flow.paused = enabled;
-      else if (['catches', 'timers', 'uniform', 'power'].includes(option)) flow.setAdminOption(option as Parameters<GameFlow['setAdminOption']>[0], enabled);
+      else if (['catches', 'timers', 'uniform', 'power', 'missions'].includes(option)) flow.setAdminOption(option as Parameters<GameFlow['setAdminOption']>[0], enabled);
       else throw new Error(`Unknown admin option: ${option}`);
       refresh(); return flow.adminStatus;
     },
