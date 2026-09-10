@@ -1,0 +1,206 @@
+<!doctype html>
+<html lang="en" dir="ltr">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
+    <title>La Casa de Datos</title>
+    <link rel="stylesheet" href="/src/ui/style.css" />
+  </head>
+  <body>
+    <canvas id="stage"></canvas>
+
+    <div id="ui">
+      <!-- ATTRACT / HOMEPAGE -->
+      <section id="scr-attract" class="screen attract">
+        <div class="attract-grid">
+          <svg class="mask" viewBox="0 0 120 140" aria-hidden="true">
+              <path class="mask-face" d="M60 6c26 0 44 17 44 44 0 34-18 84-44 84S16 84 16 50C16 23 34 6 60 6z" />
+              <path class="mask-brow" d="M28 46c8-9 20-11 28-6M92 46c-8-9-20-11-28-6" />
+              <ellipse class="mask-eye" cx="40" cy="60" rx="9" ry="11" />
+              <ellipse class="mask-eye" cx="80" cy="60" rx="9" ry="11" />
+              <circle class="mask-pupil" cx="40" cy="60" r="4" />
+              <circle class="mask-pupil" cx="80" cy="60" r="4" />
+              <path class="mask-stache" d="M60 92c-10 0-20-4-26-14-4-7-14-8-16 0-2 9 8 15 16 12M60 92c10 0 20-4 26-14 4-7 14-8 16 0 2 9-8 15-16 12" />
+            <path class="mask-goatee" d="M54 104h12l-6 16z" />
+          </svg>
+
+          <h1 class="wordmark">
+            <span class="wm-word" data-i18n="title.part1">LA CASA</span
+            ><span class="wm-box"><span class="wm-de" data-i18n="title.box">DE</span></span
+            ><span class="wm-word" data-i18n="title.part2">DATOS</span>
+          </h1>
+          <p class="subtitle" data-i18n="title.sub">The AI Heist</p>
+
+          <p class="typeline"><span id="attract-line"></span><i class="caret"></i></p>
+        </div>
+
+        <div class="cta">
+          <span class="cta-text" data-i18n="attract.cta">PRESS ANY BUTTON</span>
+          <span class="glyphs" id="attract-glyphs"></span>
+        </div>
+
+        <div class="wanted">
+          <span class="wanted-label" data-i18n="attract.wanted">BEST POLICE CHIEFS</span>
+          <div class="wanted-clip"><div class="wanted-track" id="attract-wanted"></div></div>
+        </div>
+
+        <button class="lang-toggle" id="lang-toggle" data-i18n="lang.toggle">עברית</button>
+        <button class="companion-launch" id="open-red-team" data-i18n="menu.companion">Red-team screen ↗</button>
+      </section>
+
+      <!-- BRIEFING CARDS -->
+      <section id="scr-brief" class="screen card chalk">
+        <div class="card-inner">
+          <h2 class="card-title" id="brief-title"></h2>
+          <p class="card-body" id="brief-body"></p>
+          <ul class="card-brief" id="brief-lines"></ul>
+          <p class="card-controls" id="brief-controls"></p>
+          <div class="codename-stamp" id="brief-codename"></div>
+          <p class="card-tip" id="brief-tip"></p>
+        </div>
+        <p class="skip" data-i18n="common.skip"></p>
+      </section>
+
+      <!-- ROUND 1 HUD -->
+      <section id="scr-hud1" class="screen hud">
+        <div class="hud-top">
+          <div class="chip name"><span class="chip-k" data-i18n="common.you"></span><span class="chip-v" id="h1-name"></span></div>
+          <div class="chip"><span class="chip-k" data-i18n="round1.hud.time"></span><span class="chip-v" id="h1-time">0.0</span></div>
+          <div class="chip goal"><span class="chip-v" id="h1-goal"></span></div>
+          <div class="chip"><span class="chip-k" data-i18n="round1.hud.caught"></span><span class="chip-v" id="h1-caught">0</span></div>
+        </div>
+        <div class="banner" id="h1-banner"></div>
+        <div class="progress-wrap" id="h1-progress-wrap"><div class="progress" id="h1-progress"></div><span id="h1-progress-label"></span></div>
+        <div class="pick-wrap" id="h1-pick">
+          <span class="pick-label" id="h1-pick-label"></span>
+          <div class="pick-bar">
+            <div class="pick-zone" id="h1-pick-zone"></div>
+            <div class="pick-marker" id="h1-pick-marker"></div>
+          </div>
+          <div class="pick-pins" id="h1-pick-pins"></div>
+          <span class="pick-hint" id="h1-pick-hint"></span>
+        </div>
+        <div class="obj-arrow" id="h1-arrow"><span class="obj-glyph" id="h1-arrow-glyph">➤</span><span class="obj-label" data-i18n="round1.vault"></span></div>
+        <aside class="missions" id="h1-missions">
+          <h3 class="missions-title" data-i18n="missions.title"></h3>
+          <ol class="phases" id="h1-phases"></ol>
+          <div class="legend">
+            <span class="legend-row"><i class="legend-dot guard"></i><span class="legend-a" data-i18n="missions.guards"></span><span class="legend-b" data-i18n="cyber.av"></span></span>
+            <span class="legend-row"><i class="legend-dot cam"></i><span class="legend-a" data-i18n="missions.cameras"></span><span class="legend-b" data-i18n="cyber.syslog"></span></span>
+          </div>
+        </aside>
+        <div class="cue" id="h1-cue">
+          <span class="cue-icon" id="h1-cue-icon"></span>
+          <span class="cue-body">
+            <span class="cue-title" id="h1-cue-title"></span>
+            <span class="cue-action"><span class="cue-key" id="h1-cue-key"></span><span class="cue-hint" id="h1-cue-hint"></span></span>
+          </span>
+        </div>
+        <div class="drill-wrap" id="h1-drill">
+          <span class="drill-label" id="h1-drill-label"></span>
+          <div class="drill-panel">
+            <div class="drill-wall" id="h1-drill-wall"><i></i><i></i><i></i><i></i><i></i></div>
+            <div class="drill-bar"><div class="drill-fill" id="h1-drill-progress"></div></div>
+            <div class="drill-heat-row">
+              <span class="drill-heat-label" id="h1-drill-heat-label"></span>
+              <div class="drill-heat"><div class="drill-heat-fill" id="h1-drill-heat"></div></div>
+            </div>
+          </div>
+          <span class="drill-hint" id="h1-drill-hint"></span>
+        </div>
+        <div class="loads" id="h1-loads">
+          <span class="loads-k" id="h1-loads-label"></span>
+          <span class="loads-pips" id="h1-loads-pips"></span>
+        </div>
+        <div class="wire-wrap" id="h1-wire">
+          <span class="wire-label" id="h1-wire-label"></span>
+          <div class="wire-panel">
+            <div class="wire-rows" id="h1-wire-rows"></div>
+          </div>
+          <span class="wire-hint" id="h1-wire-hint"></span>
+        </div>
+        <div class="hud-bottom"><span id="h1-prompt"></span></div>
+      </section>
+
+      <!-- ROUND 2 HUD -->
+      <section id="scr-hud2" class="screen hud">
+        <div class="hud-top">
+          <div class="chip name"><span class="chip-k" data-i18n="common.you"></span><span class="chip-v" id="h2-name"></span></div>
+          <div class="chip"><span class="chip-k" data-i18n="round2.hud.locks"></span><span class="chip-v" id="h2-locks">3</span></div>
+          <button class="chip action" id="h2-alarm-chip" type="button"><span class="chip-k" data-i18n="round2.hud.alarm"></span><span class="chip-v" id="h2-alarm"></span></button>
+          <div class="chip danger"><span class="chip-k" data-i18n="round2.hud.breaches"></span><span class="chip-v" id="h2-breaches">0</span></div>
+          <div class="chip good"><span class="chip-k" data-i18n="round2.hud.caught"></span><span class="chip-v" id="h2-caught">0</span></div>
+          <div class="chip"><span class="chip-k" data-i18n="round2.hud.thieves"></span><span class="chip-v" id="h2-thieves">0</span></div>
+        </div>
+        <div class="wave-title" id="h2-wave"></div>
+        <div class="banner" id="h2-banner"></div>
+        <div class="hud-bottom"><span id="h2-prompt"></span></div>
+      </section>
+
+      <!-- WAYS IN: shared by the planning beat and the swarm round -->
+      <aside class="ways" id="ways">
+        <h3 class="ways-title" id="ways-title"></h3>
+        <ol class="ways-list" id="ways-list"></ol>
+      </aside>
+
+      <!-- RESULTS -->
+      <section id="scr-results" class="screen results">
+        <h2 class="results-title" data-i18n="results.title">THE GAP</h2>
+        <div class="compare">
+          <div class="side you">
+            <span class="side-label" data-i18n="common.you">YOU</span>
+            <span class="side-num" id="res-you-n">1</span>
+            <span class="side-sub" id="res-you-sub"></span>
+          </div>
+          <div class="side ai">
+            <span class="side-label" data-i18n="common.ai">THE AI</span>
+            <span class="side-num" id="res-ai-n">14</span>
+            <span class="side-sub" id="res-ai-sub"></span>
+            <span class="side-sub strong" id="res-ai-sub2"></span>
+          </div>
+        </div>
+        <p class="ratio" id="res-ratio"></p>
+        <p class="sleep" data-i18n="results.aiNoSleep"></p>
+        <p class="held" id="res-held"></p>
+        <h3 class="translate-title" data-i18n="results.translate"></h3>
+        <ul class="translate" id="res-translate"></ul>
+        <p class="footer-line" data-i18n="results.footer"></p>
+        <p class="skip" data-i18n="results.continue"></p>
+      </section>
+
+      <!-- THE AI PLANNING -->
+      <section id="scr-think" class="screen think">
+        <h2 class="think-title" data-i18n="think.title"></h2>
+        <div class="think-count"><span id="think-n">0</span></div>
+        <p class="think-unit" id="think-unit"></p>
+        <p class="think-clock" id="think-clock"></p>
+        <p class="think-note" id="think-note" data-i18n="think.note"></p>
+      </section>
+
+      <!-- PAUSE MENU -->
+      <section id="scr-menu" class="screen menu">
+        <div class="menu-panel">
+          <h2 class="menu-title" data-i18n="menu.title">PAUSED</h2>
+          <ul class="menu-rows" id="menu-rows"></ul>
+          <p class="menu-hint" data-i18n="menu.hint"></p>
+        </div>
+      </section>
+
+      <!-- PRESENTER -->
+      <section id="scr-presenter" class="panel">
+        <h3 data-i18n="presenter.title">PRESENTER</h3>
+        <p class="panel-hint" id="pres-hint"></p>
+        <div class="panel-row" id="pres-actions"></div>
+        <div class="panel-row" id="pres-sliders"></div>
+        <p class="panel-stats" id="pres-stats"></p>
+        <p class="panel-exit" data-i18n="presenter.exit"></p>
+      </section>
+
+      <div id="toast"></div>
+      <div id="cursor" hidden></div>
+      <div id="fade"></div>
+    </div>
+
+    <script type="module" src="/src/main.ts"></script>
+  </body>
+</html>

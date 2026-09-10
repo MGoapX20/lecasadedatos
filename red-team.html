@@ -1,0 +1,57 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <meta name="theme-color" content="#090d14" />
+    <title>Red Team Live — La Casa de Datos</title>
+    <link rel="stylesheet" href="/src/companion/style.css" />
+  </head>
+  <body>
+    <div id="companion">
+      <header class="masthead">
+        <a class="brand" href="./" title="Open the game"
+          >LA CASA <span>DE</span> DATOS <b>/ RED TEAM LIVE</b></a
+        >
+        <div class="screen-tools">
+          <span id="connection" class="connection" role="status"
+            >CONNECTING</span
+          ><button id="fullscreen" type="button" aria-label="Toggle fullscreen">
+            ⛶ <span>Fullscreen</span>
+          </button>
+        </div>
+      </header>
+      <div
+        id="connection-notice"
+        class="connection-notice"
+        role="status"
+        hidden
+      ></div>
+      <main id="viewport">
+        <div id="display">
+          <section class="waiting">
+            <span class="eyebrow">THE OTHER SIDE OF THE HEIST</span>
+            <h1>Waiting for the thief round.</h1>
+            <p>
+              Open the game in this browser, then choose
+              <strong>Red-team screen</strong> in its menu or press
+              <kbd>F2</kbd>.
+            </p>
+            <p class="muted">
+              Move this window to a second monitor. The display follows the
+              visitor automatically during the thief round only.
+            </p>
+            <div id="sources"></div>
+            <a class="action" href="./" target="_blank">Open the game ↗</a>
+          </section>
+        </div>
+      </main>
+      <footer class="bottom-bar">
+        <span id="simulation-label">FICTIONAL TARGET · LIVE GAME EVENTS</span
+        ><span id="footer-phase">LOCAL EXERCISE / STANDBY</span
+        ><span>LA CASA DE DATOS / 02</span>
+      </footer>
+    </div>
+    <script type="module" src="/src/companion/main.ts"></script>
+  </body>
+</html>

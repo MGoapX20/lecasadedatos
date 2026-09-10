@@ -1,0 +1,9 @@
+# Dependencies and build output
+node_modules/
+dist/
+
+# Temporary source snapshot from the 2026-09 handoff; not part of the project
+_src_snapshot.tgz
+
+# macOS
+.DS_Store
