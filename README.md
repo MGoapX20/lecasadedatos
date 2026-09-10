@@ -45,6 +45,16 @@ The kiosk script also keeps the laptop awake. Everything is served from
 
 ## Controls
 
+### Live top-down map
+
+Open `/minimap.html` in another tab on the same origin (also listed in the admin
+panel). Select a game session to follow its live state. The fixed view fits the
+entire bank and pavement and shows walls, blocking furniture, entrances, remaining
+pickups, characters, doors, the delivery truck, and the wall breach/escape van.
+Decorative scenery is omitted. The page is read-only and retains a clearly marked
+last view if its game disconnects. Reload an already-open game after upgrading to
+enable its map publisher. A `?game=<session-id>` link preserves the selected game.
+
 ### Synchronized red-team display
 
 Press **F2**, click **Red-team screen ↗** on the start screen, or choose it in the

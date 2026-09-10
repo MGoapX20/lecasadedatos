@@ -4,7 +4,7 @@ export default defineConfig({
   resolve: { dedupe: ['three'] },
   base: './',
   build: {
-    rollupOptions: { input: { game: 'index.html', redTeam: 'red-team.html', admin: 'admin.html' } },
+    rollupOptions: { input: { game: 'index.html', redTeam: 'red-team.html', admin: 'admin.html', minimap: 'minimap.html' } },
     target: 'esnext',
     sourcemap: false,
     chunkSizeWarningLimit: 2000,

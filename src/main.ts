@@ -12,6 +12,7 @@ import { applySavedBuilding, mountPresenter } from './game/presenter';
 import { PauseMenu } from './game/menu';
 import { mountAdmin } from './game/admin';
 import { publishAdmin } from './game/admin-channel';
+import { mountMinimap } from './minimap/publisher';
 import { Overlay } from './ui/overlay';
 import { applyDocumentLang } from './ui/i18n';
 import { mountCompanion } from './companion/publisher';
@@ -88,6 +89,7 @@ async function boot(): Promise<void> {
 
   flow.enter('attract');
   publishAdmin(admin);
+  const minimap = mountMinimap(flow, () => companion.source);
 
   const loop = new GameLoop(
     () => flow.tickSim(),
@@ -100,6 +102,7 @@ async function boot(): Promise<void> {
       flow.update(dtMs);
       admin.update();
       companion.update(performance.now());
+      minimap.update(performance.now());
       stage.render(director, dtMs);
     },
   );
