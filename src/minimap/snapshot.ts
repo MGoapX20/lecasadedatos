@@ -14,7 +14,10 @@ export function mapSnapshot(world: SimWorld) {
     keys: l.json.keycards.flatMap((k, i) => {
       const kind = k.kind ?? 'card';
       if (kind === 'card' && world.keyTaken[i]) return [];
-      return [{ cell: k.cell, kind, used: kind === 'fuse' ? world.camerasDown : !!world.keyTaken[i] }];
+      const used = kind === 'fuse' ? world.camerasDown
+        : kind === 'uniform' ? !!world.player?.keys.has(k.id) || !!world.keyTaken[i]
+        : !!world.keyTaken[i];
+      return [{ cell: k.cell, kind, used }];
     }),
     portals: l.json.portals.filter(p => p.id !== 'p_truck').map(p => ({ from: p.from, to: p.to, kind: p.kind })),
     guards: world.guards.filter(g => g.present).map(g => ({ x:g.x, y:g.y, facing:g.facing })),

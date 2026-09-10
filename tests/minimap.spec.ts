@@ -31,6 +31,21 @@ describe('live minimap snapshots', () => {
     expect(mapSnapshot(world).thieves).toHaveLength(0);
     expect(mapSnapshot(world).riding).toBe(true);
   });
+  it('grays the uniform after a real walk-over pickup and does not equip it twice', () => {
+    const level=loadMint(), world=new SimWorld(level,9), p=world.spawnPlayer('front','Map test');
+    world.catchesEnabled=false;
+    const index=level.json.keycards.findIndex(k=>k.kind==='uniform');
+    const uniform=level.json.keycards[index];
+    p.x=uniform.cell[0]+.5;p.y=uniform.cell[1]+.5;
+    world.step();
+    expect(world.isDisguised(p)).toBe(true);
+    expect(world.keyTaken[index]).toBe(0); // The fixture remains available to other characters.
+    expect(mapSnapshot(world).keys.find(k=>k.kind==='uniform')?.used).toBe(true);
+    expect(world.events.filter(e=>e.kind==='disguised')).toHaveLength(1);
+    world.step();
+    expect(world.events.filter(e=>e.kind==='disguised')).toHaveLength(1);
+    expect(mapSnapshot(world).keys.find(k=>k.kind==='uniform')?.used).toBe(true);
+  });
   it('shows the real drilled opening and arriving van', () => {
     const level=loadMint(),world=new SimWorld(level,9),p=world.spawnPlayer('front','Map test');
     world.catchesEnabled=false;world.guards=[];
