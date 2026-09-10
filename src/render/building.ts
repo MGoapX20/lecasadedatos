@@ -892,6 +892,9 @@ export function buildBuilding(level: Level, models: ModelLib): BuildingView {
 
   const portalMarks = new Map<string, Object3D>();
   for (const p of level.json.portals) {
+    // The truck portal is a planner route, not a physical hatch. Its vehicle
+    // supplies the visual and interaction at both ends of the ride.
+    if (p.id === 'p_truck') continue;
     for (const [tag, cell] of [
       ['from', p.from],
       ['to', p.to],

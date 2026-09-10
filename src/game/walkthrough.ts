@@ -20,7 +20,8 @@ export class GuidedWalkthrough {
       const d = level.doors.find(d => d.id === id)!;
       return at([d.rect[0] + d.rect[2] / 2 - .5, d.rect[1] + d.rect[3] / 2 - .5], { kind: 'door', id });
     };
-    const left = [6, 32], right = [90, 34];
+    const sideY = level.json.entries.find(entry => entry.id === 'side')!.spawn[1];
+    const left = [6, sideY - 2], right = [90, sideY];
     if (Math.hypot(p.x - left[0] - .5, p.y - left[1] - .5) < 7) this.left = true;
     if (Math.hypot(p.x - right[0] - .5, p.y - right[1] - .5) < 7) this.right = true;
     const entered = missions.phases.find(x => x.id === 'foothold')?.done || p.breached;

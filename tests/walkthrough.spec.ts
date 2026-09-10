@@ -14,7 +14,7 @@ function setup() {
     if (kind === 'vent' || kind === 'sewer') missions.note({ kind:'portalExit', thief:p.id, portal:`p_${kind}` });
     if (kind === 'side') missions.note({ kind:'lockpickEnd', thief:p.id, door:level.doors.findIndex(d => d.id === 'd_side') });
     if (kind === 'dock') missions.note({ kind:'truckLeave', thief:p.id, inside:true });
-    p.x = kind === 'dock' ? 73.5 : 48.5; p.y = kind === 'dock' ? 14.5 : 50.5;
+    p.x = kind === 'dock' ? 73.5 : 48.5; p.y = kind === 'dock' ? 26.5 : 62.5;
   };
   return { level, world, p, guide, read, enter };
 }
@@ -24,14 +24,14 @@ describe('advisory walkthrough', () => {
     const { level, world, p, read } = setup();
     world.guards = []; world.catchesEnabled = false;
     p.keys.add('k_manager'); world.setPlayerUniform(true); world.setPowerEnabled(false);
-    p.x = 48.5; p.y = 30.5;
+    p.x = 48.5; p.y = 42.5;
     expect(read()?.id).toBe('vault');
     world.setPlayerMove(0, -1);
     let entered = false;
     const events = [];
     for (let tick = 0; tick < 100; tick++) {
       world.step(); events.push(...world.drainEvents());
-      if (p.y < 28) { entered = true; break; }
+      if (p.y < 40) { entered = true; break; }
       expect(p.breached).toBe(false);
     }
     expect(entered).toBe(true);
@@ -55,7 +55,7 @@ describe('advisory walkthrough', () => {
       p.x=x+.5; p.y=y+.5;
     }
     expect(read()?.targets).toHaveLength(5);
-    guide.reset(); p.x=48.5; p.y=61.5;
+    guide.reset(); p.x=48.5; p.y=73.5;
     expect(read()?.id).toBe('right');
   });
   it('allows entering early and chooses power first for the vent', () => {

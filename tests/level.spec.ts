@@ -9,9 +9,13 @@ describe('mint_v1 level', () => {
 
   it('builds a grid of the declared size', () => {
     expect(level.w).toBe(96);
-    expect(level.h).toBe(64);
-    expect(level.walk.length).toBe(96 * 64);
-    expect(level.pwalk.length).toBe(48 * 32);
+    expect(level.h).toBe(88);
+    expect(level.walk.length).toBe(96 * 88);
+    // The widened front pavement is real walking space, not scenery outside the grid.
+    for (let y = 76; y < 88; y++) {
+      for (let x = 0; x < 96; x++) expect(level.walk[y * level.w + x]).toBe(1);
+    }
+    expect(level.pwalk.length).toBe(48 * 44);
   });
 
   it('has a walkable exterior ring joining every entry spawn', () => {
@@ -115,7 +119,7 @@ describe('being caught throws you outside', () => {
 
   it('walls off the rooms it is supposed to, and only from the plan', () => {
     // A spot check either side of the corridor's north wall (y = 28-29).
-    const at = (x: number, y: number) => level.wall[y * level.w + x];
+    const at = (x: number, y: number) => level.wall[(y + 12) * level.w + x];
     expect(at(16, 28), 'corridor/west-wing partition').toBe(1);
     expect(at(16, 31), 'inside the corridor').toBe(0);
     expect(at(16, 20), 'inside the west wing').toBe(0);

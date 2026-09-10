@@ -75,7 +75,7 @@ describe('the mission board', () => {
     m.note({ kind: 'portalExit', thief: player.id, portal: 'p_sewer' });
     // In the corridor, which is indoors without being the vault: standing in
     // the vault itself hands the board to the exfiltration section.
-    stand(m, world, player, 48, 32);
+    stand(m, world, player, 48, 44);
     expect(obj(m, 'foothold', 'foothold.sewer').state).toBe('done');
     expect(phase(m, 'foothold').done).toBe(true);
     expect(phase(m, 'lateral').active, 'being inside is where lateral movement starts').toBe(true);
@@ -83,13 +83,13 @@ describe('the mission board', () => {
 
   it('falls back to the front door when nothing else explains being inside', () => {
     const { m, world, player } = start();
-    stand(m, world, player, 48, 32);
+    stand(m, world, player, 48, 44);
     expect(obj(m, 'foothold', 'foothold.front').state).toBe('done');
   });
 
   it('ticks the lateral moves off as they happen', () => {
     const { m, world, player } = start();
-    stand(m, world, player, 48, 32);
+    stand(m, world, player, 48, 44);
     expect(obj(m, 'lateral', 'lateral.power').state).toBe('open');
 
     world.camerasDownUntil = world.tick + 200;
@@ -116,7 +116,7 @@ describe('the mission board', () => {
 
   it('hands the board to exfiltration the moment the thief is in the vault', () => {
     const { m, world, player } = start();
-    stand(m, world, player, 48, 32);
+    stand(m, world, player, 48, 44);
     expect(phase(m, 'lateral').active).toBe(true);
     stand(m, world, player, level.json.vault.cell[0], level.json.vault.cell[1]);
     expect(phase(m, 'exfil').active, 'the vault is where getting it out begins').toBe(true);
@@ -128,7 +128,7 @@ describe('the mission board', () => {
     // outlined, or walking the perimeter — the whole of the recon phase — is
     // over before it starts.
     const { m, world, player } = start();
-    stand(m, world, player, 70, 60);
+    stand(m, world, player, 70, 72);
     expect(m.activeMarks, 'nothing found, nothing lit').toHaveLength(0);
     const sewer = level.json.entries.find((e) => e.id === 'sewer')!;
     stand(m, world, player, sewer.spawn[0] + 3, sewer.spawn[1]);
@@ -140,7 +140,7 @@ describe('the mission board', () => {
 
   it('outlines only the objectives still to do', () => {
     const { m, world, player } = start();
-    stand(m, world, player, 48, 32);
+    stand(m, world, player, 48, 44);
     expect(phase(m, 'lateral').active).toBe(true);
     const before = m.activeMarks.length;
     expect(before, 'the items and the vault door').toBeGreaterThan(1);
@@ -177,7 +177,7 @@ describe('the mission board', () => {
     expect(obj(m, 'foothold', 'foothold.sewer').state).toBe('open');
     m.reset();
     // Somewhere out on the south plaza, well clear of every way in.
-    stand(m, world, player, 70, 60);
+    stand(m, world, player, 70, 72);
     expect(obj(m, 'foothold', 'foothold.sewer').state).toBe('hidden');
   });
 });

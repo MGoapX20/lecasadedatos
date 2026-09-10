@@ -18,7 +18,7 @@ const stage=createStage(document.querySelector('canvas'),director);
 const view=new WorldView(level,stage,await loadModels());stage.setNight(false);view.setCutaway(true);
 const world=new SimWorld(level,11);world.guards=[];world.catchesEnabled=false;
 const player=world.spawnPlayer('front','Vault test');player.keys.add('k_manager');world.setPlayerUniform(true);world.setPowerEnabled(false);
-player.x=48.5;player.y=30.5;
+player.x=48.5;player.y=42.5;
 const missions=new MissionTracker(), guide=new GuidedWalkthrough();
 function update(){missions.update(world,level,player);const step=guide.update(world,level,missions);view.setGuideTargets(step?.targets??[]);document.querySelector('#next').textContent='Next: '+(strings[step?.labelKey]??step?.id);return step;}
 const resize=()=>{stage.resize(innerWidth,590,director);director.cut('gameplay');};resize();addEventListener('resize',resize);
@@ -27,9 +27,9 @@ document.querySelector('#status').textContent='BEFORE: outside the vault · guid
 const button=document.querySelector('#enter');button.disabled=false;
 button.onclick=()=>{
   world.setPlayerMove(0,-1);let ticks=0;const events=[];
-  while(player.y>=28&&ticks<100){world.step();events.push(...world.drainEvents());ticks++;}
+  while(player.y>=40&&ticks<100){world.step();events.push(...world.drainEvents());ticks++;}
   world.setPlayerMove(0,0);const step=update();
-  const pass=player.y<28&&player.breached&&step?.id==='wall'&&step.targets[0].mark?.kind==='breachWall'&&player.printTicks===0&&!events.some(e=>e.kind==='printStart');
+  const pass=player.y<40&&player.breached&&step?.id==='wall'&&step.targets[0].mark?.kind==='breachWall'&&player.printTicks===0&&!events.some(e=>e.kind==='printStart');
   document.querySelector('#status').textContent=`${pass?'PASS':'FAIL'} — walked through the vault door\nBEFORE: guide = vault → AFTER: guide = wall (on the first tick inside)\nSpace presses: 0 · Printing ticks: ${player.printTicks} · Printing events: ${events.filter(e=>e.kind==='printStart').length}\nWall arrow target: ${step?.targets[0].cell.join(', ')} · Player remains active for drilling and delivery`;
   button.disabled=true;
 };

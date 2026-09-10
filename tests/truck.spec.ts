@@ -8,6 +8,31 @@ const def = level.json.delivery as DeliveryDef;
 const HZ = level.json.rules.tickHz;
 
 describe("the supplier's delivery round", () => {
+  it('keeps the full truck footprint clear of walls and lamp posts on every shop route', () => {
+    // The rendered truck is 7 m long. Check a 2.5 m wide body, rather than
+    // checking only its centre point, including inbound and outbound turns.
+    const halfLength = 3.5 / level.cellSize;
+    const halfWidth = 1.25 / level.cellSize;
+    const lamps = level.json.props.filter(p => p.kind === 'lamp');
+    for (const stop of def.stops) for (let tick = 0; tick < def.cycleTicks; tick++) {
+      const pose = truckPoseAt({ ...def, stops: [stop] }, HZ, tick);
+      const a = pose.facing * Math.PI / 180, c = Math.cos(a), s = Math.sin(a);
+      for (const lamp of lamps) {
+        const dx = lamp.cell[0] + .5 - pose.x, dy = lamp.cell[1] + .5 - pose.y;
+        const along = Math.max(0, Math.abs(dx*c + dy*s) - halfLength);
+        const across = Math.max(0, Math.abs(-dx*s + dy*c) - halfWidth);
+        expect(Math.hypot(along, across), `lamp ${lamp.cell}, shop ${stop}, tick ${tick}`).toBeGreaterThan(.6);
+      }
+      for (let along = -halfLength; along <= halfLength; along += .5) {
+        for (let across = -halfWidth; across <= halfWidth; across += .5) {
+          const x = Math.floor(pose.x + along*c - across*s);
+          const y = Math.floor(pose.y + along*s + across*c);
+          if (x < 0 || x >= level.w || y < 0 || y >= level.h) throw new Error(`truck outside pavement at ${x},${y}`);
+          if (level.wall[y*level.w+x]) throw new Error(`wall ${x},${y}, shop ${stop}, tick ${tick}`);
+        }
+      }
+    }
+  });
   it('is authored on the level', () => {
     expect(def, 'the level needs a delivery round for the loading bay to work').toBeTruthy();
     expect(def.stops.length).toBeGreaterThanOrEqual(3);
@@ -101,13 +126,16 @@ describe('stowing away in the truck', () => {
 
   it('carries the player through the shut gate and puts them down inside', () => {
     const { world, stopTick } = atAShop();
+    // Advancing to a shop's timetable must not arrest the test player at spawn
+    // before they are placed beside the truck. This test isolates the ride.
+    world.catchesEnabled = false;
     const player = world.spawnPlayer('front', 'Tokyo');
     player.graceTicks = 0;
     world.tick = stopTick - 1;
     world.step();
     player.x = world.truck.x;
     player.y = world.truck.y;
-    world.boardTruck();
+    expect(world.boardTruck()).toBe(true);
 
     const gate = level.doors.findIndex((d) => d.id === 'd_dock_outer');
     expect(world.doorLocked[gate], 'the bay gate stays shut for people').toBe(1);

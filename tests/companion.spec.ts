@@ -65,7 +65,7 @@ function fixture() {
       throw new Error('Expected the thief round');
     return snapshot;
   };
-  stand(48, 61);
+  stand(48, 73);
   return {
     flow,
     world,
@@ -96,8 +96,8 @@ describe('the companion follows the existing mission board', () => {
     expect(sceneId(f.capture())).toBe('access-dock');
     // Follow a delivery to somewhere other than its authored spawn/shop.
     f.world.truck.x = 30;
-    f.world.truck.y = 62;
-    f.stand(30, 61);
+    f.world.truck.y = 74;
+    f.stand(30, 73);
     expect(f.capture().focusEntry).toBe('dock');
     expect(sceneId(f.capture())).toBe('access-dock');
   });
@@ -120,10 +120,10 @@ describe('the companion follows the existing mission board', () => {
     expect(f.capture().phase).toBe('foothold');
     expect(sceneId(f.capture())).toBe('access-side');
     f.note({ kind: 'portalExit', thief: f.player.id, portal: 'p_sewer' });
-    f.stand(48, 32);
+    f.stand(48, 44);
     expect(f.capture().phase).toBe('lateral');
     expect(f.capture().focusEntry).toBe('sewer');
-    f.stand(48, 18);
+    f.stand(48, 30);
     expect(f.capture().phase).toBe('exfil');
     expect(sceneId(f.capture())).toBe('exfil');
     expect(f.capture().player?.breached).toBe(false);
@@ -153,7 +153,7 @@ describe('the companion follows the existing mission board', () => {
 
   it('uses distinct scenes for credentials, disguise, and monitoring loss, with truthful inventory', () => {
     const f = fixture();
-    f.stand(48, 32);
+    f.stand(48, 44);
     const card = f.level.json.keycards.find(
       (k) => (k.kind ?? 'card') === 'card',
     )!;
@@ -184,7 +184,7 @@ describe('the companion follows the existing mission board', () => {
     for (let i = 0; i < 20; i++) f.world.step();
     const progress = f.capture().exfil.channelProgress;
     expect(progress).toBeGreaterThan(0);
-    f.stand(48, 18);
+    f.stand(48, 30);
     f.world.step();
     expect(f.world.activeDrill).toBeNull();
     expect(f.capture().exfil.channelProgress).toBe(progress);
