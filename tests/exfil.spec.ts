@@ -110,12 +110,12 @@ describe('the van', () => {
 });
 
 describe('getting the money out', () => {
-  it('will not let anyone touch the wall before the vault is open', () => {
+  it('will not let anyone drill from outside before entering the vault', () => {
     const world = new SimWorld(level, 5);
     const player = world.spawnPlayer('front', 'Tokyo');
     player.graceTicks = 0;
-    standAt(player, def.stand);
-    expect(world.atWall(player), 'there is nothing to take out yet').toBe(false);
+    standAt(player, [def.stand[0], 8]);
+    expect(world.atWall(player), 'the vault has not been entered').toBe(false);
     world.step();
     expect(world.activeDrill).toBeNull();
   });

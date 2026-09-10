@@ -595,26 +595,16 @@ export class SimWorld {
       this.activeWire = null;
     }
 
-    // Print money in the vault.
-    const vx = (this.level.vaultFineCell % this.level.w) + 0.5;
-    const vy = ((this.level.vaultFineCell / this.level.w) | 0) + 0.5;
-    if (Math.hypot(t.x - vx, t.y - vy) < 3.0) {
-      if (t.printTicks === 0) this.events.push({ kind: 'printStart', thief: t.id });
-      t.printTicks++;
-      const need = this.level.json.rules.vaultPrintQuanta * this.level.json.rules.quantumTicks;
-      if (t.printTicks >= need && !t.breached) {
-        t.breached = true;
-        this.events.push({ kind: 'breach', thief: t.id, x: t.x, y: t.y, tick: this.tick });
-        // The money is printed; now it has to leave the building. Only a plan
-        // follower is finished here, and only because the swarm is measuring
-        // ways in, not robberies.
-        if (!this.level.json.exfil || t.kind !== 'player') {
-          t.retired = true;
-          this.events.push({ kind: 'thiefDone', thief: t.id, reason: 'breach' });
-        }
+    // Crossing into the vault completes access immediately. The next task is
+    // the wall breach, with no printing interaction or dwell time.
+    const [vx, vy, vw, vh] = this.level.json.areas.find(area => area.id === 'vault_hall')?.rect ?? this.level.json.vault.rect;
+    if (!t.breached && t.x >= vx && t.x < vx + vw && t.y >= vy && t.y < vy + vh) {
+      t.breached = true;
+      this.events.push({ kind: 'breach', thief: t.id, x: t.x, y: t.y, tick: this.tick });
+      if (!this.level.json.exfil || t.kind !== 'player') {
+        t.retired = true;
+        this.events.push({ kind: 'thiefDone', thief: t.id, reason: 'breach' });
       }
-    } else if (t.printTicks > 0 && !t.breached) {
-      t.printTicks = 0;
     }
   }
 

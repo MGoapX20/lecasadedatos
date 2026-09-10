@@ -23,6 +23,7 @@ export function mountAdmin(flow: AdminHost, closeMenu: () => void, standalone = 
     <label><input type="checkbox" data-option="uniform" data-testid="admin-uniform"> Player wearing uniform</label>
     <label><input type="checkbox" data-option="power" data-testid="admin-power"> Camera power enabled</label>
     <label><input type="checkbox" data-option="missions" data-testid="admin-missions"> Show mission board</label>
+    <label><input type="checkbox" data-option="guided" data-testid="admin-guided"> Guided walkthrough</label>
     <p>${standalone ? 'Changes apply to the selected game until that game reloads.' : 'F3 opens/closes · Changes last until reload.'} Timers off also disables idle resets; guards and mini-games keep running. Uniform requires a player. An alarm still defeats the disguise.</p>
     <p>Admin-assisted visits are excluded from the leaderboard.</p>
     <nav aria-label="Game URLs" data-testid="admin-urls"><h3>Game URLs</h3><ul></ul></nav>
@@ -35,6 +36,7 @@ export function mountAdmin(flow: AdminHost, closeMenu: () => void, standalone = 
     { label: 'Red-team companion (session picker)', path: 'red-team.html' },
     ...(import.meta.env.DEV ? [{ label: 'Highlight rendering check (development only)', path: 'tools/highlight-check.html' }] : []),
     ...(import.meta.env.DEV ? [{ label: 'Camera power regression (development only)', path: 'tools/power-check.html' }] : []),
+    ...(import.meta.env.DEV ? [{ label: 'Vault entry regression (development only)', path: 'tools/vault-entry-check.html' }] : []),
   ];
   for (const { label, path } of urls) {
     const item = document.createElement('li');
@@ -59,7 +61,7 @@ export function mountAdmin(flow: AdminHost, closeMenu: () => void, standalone = 
     const s = flow.adminStatus;
     const text = `${s.stage} · ${(s.elapsedMs / 1000).toFixed(1)}s${s.assisted ? ' · TEST VISIT' : ''}${s.waitingForSwarm ? ' · preparing routes…' : ''}`;
     if (text !== lastStatus) { status.textContent = text; lastStatus = text; }
-    for (const option of ['catches', 'timers', 'uniform', 'power', 'missions'] as const) {
+    for (const option of ['catches', 'timers', 'uniform', 'power', 'missions', 'guided'] as const) {
       const input = root.querySelector<HTMLInputElement>(`[data-option="${option}"]`)!;
       input.checked = s[option];
       input.disabled = option === 'uniform' && !s.hasPlayer;
@@ -82,7 +84,7 @@ export function mountAdmin(flow: AdminHost, closeMenu: () => void, standalone = 
     set: (option: string, enabled: boolean) => {
       if (typeof enabled !== 'boolean') throw new Error('Admin options require a boolean');
       if (option === 'paused') flow.paused = enabled;
-      else if (['catches', 'timers', 'uniform', 'power', 'missions'].includes(option)) flow.setAdminOption(option as Parameters<GameFlow['setAdminOption']>[0], enabled);
+      else if (['catches', 'timers', 'uniform', 'power', 'missions', 'guided'].includes(option)) flow.setAdminOption(option as Parameters<GameFlow['setAdminOption']>[0], enabled);
       else throw new Error(`Unknown admin option: ${option}`);
       refresh(); return flow.adminStatus;
     },

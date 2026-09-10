@@ -503,6 +503,12 @@ export class Overlay {
 
   /** Edge arrow toward the vault while it is off screen in the follow camera. */
   /** What the arrow is pointing at, in words. */
+  setGuide(text: string | null): void {
+    const node = el('h1-guide');
+    node.hidden = !text;
+    node.textContent = text ?? '';
+  }
+
   setObjectiveLabel(text: string): void {
     const node = el('h1-arrow').querySelector<HTMLElement>('.obj-label');
     if (node) {
@@ -513,6 +519,30 @@ export class Overlay {
     }
   }
 
+  private entranceIndicators: HTMLElement[] = [];
+  setEntranceIndicators(points: { x: number; y: number; angleDeg: number }[], label = 'Entrance'): void {
+    while (this.entranceIndicators.length < points.length) {
+      const node = document.createElement('div'); node.className = 'entrance-indicator';
+      node.setAttribute('aria-label', 'Entrance');
+      node.innerHTML = '<span>➤</span>';
+      el('scr-hud1').appendChild(node); this.entranceIndicators.push(node);
+    }
+    const placed: {x:number;y:number}[] = [];
+    this.entranceIndicators.forEach((node,i) => {
+      node.setAttribute('aria-label', label);
+      const point = points[i]; node.hidden = !point;
+      node.style.display = point ? 'grid' : 'none';
+      if (!point) return;
+      const bounds = node.parentElement!.getBoundingClientRect();
+      const x = Math.max(24, Math.min(bounds.width - 24, point.x));
+      let y = Math.max(85, Math.min(bounds.height - 75, point.y));
+      // Keep nearby entrance directions independently readable.
+      for (const other of placed) if (Math.abs(x-other.x)<30 && Math.abs(y-other.y)<30) y = Math.min(bounds.height-40,other.y+32);
+      placed.push({x,y}); node.style.left = x+'px'; node.style.top = y+'px';
+      node.firstElementChild!.setAttribute('style', 'transform:rotate('+point.angleDeg+'deg)');
+    });
+  }
+
   setObjectiveArrow(a: { x: number; y: number; angleDeg: number } | null): void {
     const node = el('h1-arrow');
     if (!a) {
@@ -520,8 +550,11 @@ export class Overlay {
       return;
     }
     node.classList.add('on');
-    node.style.left = `${a.x}px`;
-    node.style.top = `${a.y}px`;
+    const halfWidth = node.offsetWidth / 2 + 12;
+    const halfHeight = node.offsetHeight / 2 + 12;
+    const bounds = node.parentElement!.getBoundingClientRect();
+    node.style.left = `${Math.max(halfWidth, Math.min(bounds.width - halfWidth, a.x))}px`;
+    node.style.top = `${Math.max(halfHeight + 65, Math.min(bounds.height - halfHeight - 55, a.y))}px`;
     el('h1-arrow-glyph').style.transform = `rotate(${a.angleDeg}deg)`;
   }
 

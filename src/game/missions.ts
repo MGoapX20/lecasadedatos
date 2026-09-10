@@ -229,7 +229,7 @@ export class MissionTracker {
       for (const k of level.json.keycards) {
         if ((k.kind ?? 'card') === 'card' && player.keys.has(k.id)) this.done.add('lateral.card');
       }
-      if (player.breached) this.done.add('lateral.vault');
+      if (player.breached) { this.done.add('lateral.vault'); this.vaultSeen = true; }
     }
 
     const phases = this.build();

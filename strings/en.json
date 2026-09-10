@@ -284,5 +284,18 @@
   "round1.result.out": "THE MONEY IS OUT",
   "round1.result.stuck": "TIME UP — you got in, but nothing left the building",
   "round1.result.loads": "Money out of the building",
-  "cue.takeLoadFar": "Get to one of the printing machines"
+  "cue.takeLoadFar": "Get to one of the printing machines",
+  "guide.left": "Explore the left side of the building",
+  "guide.right": "Explore the right side of the building",
+  "guide.entry": "Choose any way in — follow a yellow arrow",
+  "guide.garage": "Pick the inner garage door to leave the loading bay",
+  "guide.uniform": "Collect the staff uniform",
+  "guide.fuse": "Go to the fuse box and cut the live wires",
+  "guide.card": "Collect the manager’s key card",
+  "guide.vault": "Use the card to enter the vault",
+  "guide.wall": "Go to the wall and hold SPACE to drill; release to cool",
+  "guide.load": "Go to a printing press and press SPACE to take a load",
+  "guide.van": "Carry the load to the van and press SPACE to deliver",
+  "guide.ride": "Stay in the truck until it reaches the loading bay",
+  "guide.prepare": "Collect the uniform and cut the power — in either order"
 }

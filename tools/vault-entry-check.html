@@ -1,0 +1,37 @@
+<!doctype html><html lang="en"><meta charset="utf-8"><title>Vault entry — no printing regression</title>
+<style>body{margin:0;background:#101923;color:white;font:16px system-ui}header{padding:18px 24px}h1{font-size:24px;margin:0 0 8px}p{color:#bfceda;margin:7px 0}button{padding:12px;background:#ffe02b;border:0;border-radius:5px;font-weight:bold}output{display:block;white-space:pre-line;padding:16px 24px;background:#19392d;line-height:1.6}canvas{display:block;width:100%;height:590px}#next{color:#ffe02b;font-size:20px}</style>
+<header><h1>Vault entry → wall breach</h1><p>Real simulation, walkthrough and renderer. Test setup supplies the card and removes guards. The button walks through the vault door; it never presses Space or sets vault completion.</p><button id="enter" disabled>Walk through the vault door</button><p id="next">Loading…</p></header>
+<output id="status">Loading assets…</output><canvas id="stage"></canvas>
+<script type="module">
+import {loadLevel} from '/src/level/loader.ts';
+import {loadModels} from '/src/render/models.ts';
+import {CameraDirector} from '/src/render/camera.ts';
+import {createStage} from '/src/render/renderer.ts';
+import {WorldView} from '/src/render/worldView.ts';
+import {SimWorld} from '/src/sim/world.ts';
+import {MissionTracker} from '/src/game/missions.ts';
+import {GuidedWalkthrough} from '/src/game/walkthrough.ts';
+const level=await loadLevel('/levels/mint_v1.json');
+const strings=await fetch('/strings/en.json').then(r=>r.json());
+const director=new CameraDirector();director.setBounds(level.w*level.cellSize*.30,level.h*level.cellSize*.30);
+const stage=createStage(document.querySelector('canvas'),director);
+const view=new WorldView(level,stage,await loadModels());stage.setNight(false);view.setCutaway(true);
+const world=new SimWorld(level,11);world.guards=[];world.catchesEnabled=false;
+const player=world.spawnPlayer('front','Vault test');player.keys.add('k_manager');world.setPlayerUniform(true);world.setPowerEnabled(false);
+player.x=48.5;player.y=30.5;
+const missions=new MissionTracker(), guide=new GuidedWalkthrough();
+function update(){missions.update(world,level,player);const step=guide.update(world,level,missions);view.setGuideTargets(step?.targets??[]);document.querySelector('#next').textContent='Next: '+(strings[step?.labelKey]??step?.id);return step;}
+const resize=()=>{stage.resize(innerWidth,590,director);director.cut('gameplay');};resize();addEventListener('resize',resize);
+world.step();world.drainEvents();view.markKeycard(world);update();
+document.querySelector('#status').textContent='BEFORE: outside the vault · guide = vault · access incomplete';
+const button=document.querySelector('#enter');button.disabled=false;
+button.onclick=()=>{
+  world.setPlayerMove(0,-1);let ticks=0;const events=[];
+  while(player.y>=28&&ticks<100){world.step();events.push(...world.drainEvents());ticks++;}
+  world.setPlayerMove(0,0);const step=update();
+  const pass=player.y<28&&player.breached&&step?.id==='wall'&&step.targets[0].mark?.kind==='breachWall'&&player.printTicks===0&&!events.some(e=>e.kind==='printStart');
+  document.querySelector('#status').textContent=`${pass?'PASS':'FAIL'} — walked through the vault door\nBEFORE: guide = vault → AFTER: guide = wall (on the first tick inside)\nSpace presses: 0 · Printing ticks: ${player.printTicks} · Printing events: ${events.filter(e=>e.kind==='printStart').length}\nWall arrow target: ${step?.targets[0].cell.join(', ')} · Player remains active for drilling and delivery`;
+  button.disabled=true;
+};
+let last=performance.now();function frame(now){const dt=Math.min(.05,(now-last)/1000);last=now;view.sync(world,dt,{showCones:false});update();director.update(dt);stage.render(director,dt*1000);requestAnimationFrame(frame);}requestAnimationFrame(frame);
+</script></html>

@@ -1,6 +1,13 @@
 import {
   AdditiveBlending,
+  AlwaysStencilFunc,
+  NotEqualStencilFunc,
+  ReplaceStencilOp,
+  KeepStencilOp,
+  BackSide,
   BoxGeometry,
+  ConeGeometry,
+  Box3,
   CircleGeometry,
   Color,
   Group,
@@ -17,6 +24,7 @@ import { cellOf, fineXYToWorldX, fineXYToWorldZ, type Level } from '../level/loa
 import { crossingDoorway } from '../level/doorway';
 import type { SimEvent } from '../sim/events';
 import type { Guard, SimWorld, Thief } from '../sim/world';
+import type { GuideTarget } from '../game/walkthrough';
 import type { MarkRef } from '../game/missions';
 import { cameraFacingAt } from '../sim/vision';
 import { buildBuilding, type BuildingView } from './building';
@@ -76,6 +84,48 @@ export class WorldView {
   private carryBob = 0;
   private holeShown = false;
   readonly money = new MoneyBurst();
+  private guideArrows: Group[] = [];
+  private guideTime = 0;
+  private guideMaterial = new MeshBasicMaterial({ color: 0xffdf00, toneMapped: false, transparent: true, opacity: 1, depthWrite: false, depthTest: true });
+  // The unexpanded arrow masks its own interior even when scenery covers it.
+  // A larger back-face hull can then draw only the outer silhouette through walls.
+  private guideMask = new MeshBasicMaterial({ transparent: true, colorWrite: false, depthWrite: false, depthTest: false,
+    stencilWrite: true, stencilRef: 2, stencilFunc: AlwaysStencilFunc, stencilZPass: ReplaceStencilOp });
+  private guideOutline = new MeshBasicMaterial({ color: 0xffdf00, toneMapped: false, transparent: true,
+    side: BackSide, depthWrite: false, depthTest: false, stencilWrite: true, stencilRef: 2,
+    stencilFunc: NotEqualStencilFunc, stencilFail: KeepStencilOp, stencilZFail: KeepStencilOp, stencilZPass: KeepStencilOp });
+  private guideHead = new ConeGeometry(.42, .65, 4);
+  private guideStem = new BoxGeometry(.22, .8, .22);
+  guidePosition(index: number) { return this.guideArrows[index]?.position; }
+  setGuideTargets(targets: GuideTarget[]): void {
+    while (this.guideArrows.length < targets.length) {
+      const g = new Group();
+      const head = new Mesh(this.guideHead, this.guideMaterial);
+      head.rotation.z = Math.PI; head.position.y = .325; head.renderOrder = 102;
+      const stem = new Mesh(this.guideStem, this.guideMaterial);
+      stem.position.y = 1.0; stem.renderOrder = 102;
+      for (const part of [head, stem]) {
+        const mask = new Mesh(part.geometry, this.guideMask);
+        mask.position.copy(part.position); mask.rotation.copy(part.rotation); mask.renderOrder = 100;
+        const rim = new Mesh(part.geometry, this.guideOutline);
+        rim.position.copy(part.position); rim.rotation.copy(part.rotation); rim.renderOrder = 101;
+        rim.scale.set(part === head ? 1.16 : 1.35, 1.10, part === head ? 1.16 : 1.35);
+        g.add(mask, rim);
+      }
+      g.add(head, stem); this.root.add(g); this.guideArrows.push(g);
+    }
+    this.guideArrows.forEach((g,i) => {
+      const target = targets[i]; g.visible = !!target;
+      if (!target) return;
+      let height = 1.3;
+      const object = target.mark ? this.objectFor(this.level, target.mark) : null;
+      if (object) {
+        const bounds = new Box3().setFromObject(object);
+        if (!bounds.isEmpty()) height = Math.max(height, bounds.max.y + .5);
+      }
+      g.position.set(fineXYToWorldX(this.level,target.cell[0]+.5),height, fineXYToWorldZ(this.level,target.cell[1]+.5));
+    });
+  }
   readonly hintPulse = new Pulse(PALETTE.gold);
   /** A glowing outline on whatever the mission board is asking for right now. */
   readonly phaseGlow = new OutlineGlow();
@@ -838,6 +888,11 @@ export class WorldView {
     this.guards.update(dtSec);
     this.money.update(dtSec);
     this.phaseGlow.update(dtSec);
+    this.guideTime += dtSec;
+    for (const g of this.guideArrows) { g.rotation.y = this.guideTime * 2; }
+    this.hintPulse.hide();
+    this.cardPulse.hide();
+    for (const kv of this.building.keycards.values()) kv.halo.visible = false;
     this.hintPulse.update(dtSec);
     this.cardPulse.update(dtSec);
     this.orderPulse.update(dtSec);
@@ -941,6 +996,7 @@ export class WorldView {
     for (const c of this.guardCones) c.dispose();
     for (const c of this.cameraCones) c.dispose();
     this.phaseGlow.dispose();
+    this.guideHead.dispose(); this.guideStem.dispose(); this.guideMaterial.dispose(); this.guideMask.dispose(); this.guideOutline.dispose();
     this.stage.scene.remove(this.root);
   }
 }

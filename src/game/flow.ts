@@ -10,6 +10,7 @@ import { orderGuardTo, withTemporaryPost, type PatrolProgram } from '../sim/patr
 import { SimWorld, type Thief } from '../sim/world';
 import { truckIsOpen } from '../sim/truck';
 import type { Cue } from '../ui/overlay';
+import { GuidedWalkthrough, type GuideStep } from './walkthrough';
 import { MissionTracker } from './missions';
 import type { AudioBus } from '../audio/audio';
 import type { InputManager } from '../input/input';
@@ -18,6 +19,7 @@ import { GroundPicker } from '../render/picking';
 import type { Stage } from '../render/renderer';
 import { WorldView } from '../render/worldView';
 import { Vector3 } from 'three';
+import { guideArrowInView } from '../render/guideVisibility';
 import { formatClock, onLangChange, t, toggleLang } from '../ui/i18n';
 import { wayColor } from '../render/palette';
 import { Overlay } from '../ui/overlay';
@@ -121,6 +123,9 @@ export class GameFlow {
   private eventCue: (Cue & { untilMs: number }) | null = null;
   /** The phase board for round 1. */
   readonly missions = new MissionTracker();
+  readonly walkthrough = new GuidedWalkthrough();
+  guided = true;
+  private guideStep: GuideStep | null = null;
   /** Guard highlighted by the operator panel. */
   presenterGuard = -1;
   private replanningUntil = 0;
@@ -188,6 +193,9 @@ export class GameFlow {
     this.stageRevision++;
     this.adminStartSwarm = false;
     this.state = next;
+    this.d.view.setGuideTargets([]);
+    this.d.overlay.setGuide(null);
+    this.d.overlay.setEntranceIndicators([]);
     this.stateMs = 0;
     this.idleMs = 0;
     this.banner = null;
@@ -361,6 +369,8 @@ export class GameFlow {
     view.markKeycard(this.world);
     director.moveTo('follow', 1.2);
     this.missions.reset();
+    this.walkthrough.reset();
+    this.guideStep = null;
     this.d.overlay.resetMissions();
     this.session.round1.entriesTried.add(entry.id);
   }
@@ -515,16 +525,50 @@ export class GameFlow {
   /** When the objective is off screen, an arrow at the edge says where to go. */
   private updateObjectiveArrow(): void {
     const { overlay, director, level, canvas } = this.d;
-    const goal = this.objectiveCell();
+    const targets = this.guideStep?.targets;
+    if (targets && (this.guideStep?.id === 'entry' || targets.length > 1)) {
+      const points: {x:number;y:number;angleDeg:number}[] = [];
+      targets.forEach((target, index) => {
+        const v = this.arrowVec.set(fineXYToWorldX(level,target.cell[0]+.5), .5, fineXYToWorldZ(level,target.cell[1]+.5));
+        const position = this.d.view.guidePosition(index);
+        if (position && guideArrowInView(position, director.camera)) return;
+        if (position) { v.copy(position); v.y += .7; }
+        const behind = v.clone().applyMatrix4(director.camera.matrixWorldInverse).z >= 0;
+        v.project(director.camera);
+        if (behind) { v.x *= -1; v.y *= -1; }
+        if (!position && !behind && v.z < 1 && Math.abs(v.x) <= 1 && Math.abs(v.y) <= 1) return;
+        const angle = Math.atan2(v.y,v.x);
+        const scale = 1 / Math.max(Math.abs(Math.cos(angle))/.92, Math.abs(Math.sin(angle))/.80);
+        points.push({ x:(Math.cos(angle)*scale*.5+.5)*canvas.clientWidth,
+          y:(.5-Math.sin(angle)*scale*.5)*canvas.clientHeight, angleDeg:-angle*180/Math.PI });
+      });
+      overlay.setObjectiveArrow(null);
+      overlay.setEntranceIndicators(points, this.guideStep?.id === 'entry' ? 'Entrance' : 'Objective');
+      return;
+    }
+    overlay.setEntranceIndicators([]);
+    const p = this.world.player;
+    const nearest = targets && p ? [...targets].sort((a,b) => Math.hypot(a.cell[0]-p.x,a.cell[1]-p.y)-Math.hypot(b.cell[0]-p.x,b.cell[1]-p.y))[0] : null;
+    const goal = nearest ? { cell: nearest.cell, labelKey: this.guideStep!.labelKey } : this.objectiveCell();
     overlay.setObjectiveLabel(t(goal.labelKey));
     const v = this.arrowVec.set(
       fineXYToWorldX(level, goal.cell[0] + 0.5),
       0.5,
       fineXYToWorldZ(level, goal.cell[1] + 0.5),
     );
+    if (nearest && targets) {
+      const position = this.d.view.guidePosition(targets.indexOf(nearest));
+      if (position && guideArrowInView(position, director.camera)) {
+        overlay.setObjectiveArrow(null);
+        return;
+      }
+      if (position) { v.copy(position); v.y += .7; }
+    }
+    const behind = v.clone().applyMatrix4(director.camera.matrixWorldInverse).z >= 0;
     v.project(director.camera);
+    if (behind) { v.x *= -1; v.y *= -1; }
     const margin = 0.86;
-    if (Math.abs(v.x) <= margin && Math.abs(v.y) <= margin && v.z < 1) {
+    if (!nearest && Math.abs(v.x) <= 1 && Math.abs(v.y) <= 1 && v.z < 1 && !behind) {
       overlay.setObjectiveArrow(null);
       return;
     }
@@ -646,6 +690,11 @@ export class GameFlow {
       this.d.audio.play('confirm');
     }
 
+    this.guideStep = this.guided ? this.walkthrough.update(this.world, level, this.missions) : null;
+    this.d.view.setGuideTargets(this.guideStep?.targets ?? []);
+    this.d.overlay.setGuide(this.guideStep ? t(this.guideStep.labelKey) : null);
+    this.updateObjectiveArrow();
+
     // Working a lock: presses go to the mini-game, not to the world.
     const pickGame = this.world.activePick;
     if (pickGame && s.start.pressed) {
@@ -661,10 +710,7 @@ export class GameFlow {
     }
 
     let progress: { label: string; value: number } | null = null;
-    if (player.printTicks > 0) {
-      const need = level.json.rules.vaultPrintQuanta * level.json.rules.quantumTicks;
-      progress = { label: t('round1.printing'), value: Math.min(1, player.printTicks / need) };
-    } else if (player.portalTicks > 0) {
+    if (player.portalTicks > 0) {
       progress = { label: '…', value: 0.5 };
     }
 
@@ -1634,7 +1680,8 @@ export class GameFlow {
     }
   }
 
-  setAdminOption(option: 'catches' | 'timers' | 'uniform' | 'power' | 'missions', enabled: boolean): void {
+  setAdminOption(option: 'catches' | 'timers' | 'uniform' | 'power' | 'missions' | 'guided', enabled: boolean): void {
+    if (option === 'guided') { this.guided = enabled; return; }
     if (option === 'missions') {
       this.missionsVisible = enabled;
       this.d.overlay.setMissionsVisible(enabled);
@@ -1651,7 +1698,7 @@ export class GameFlow {
     return {
       stage: this.state, elapsedMs: this.stateMs, paused: this.paused,
       catches: this.world.catchesEnabled, timers: this.timersEnabled,
-      missions: this.missionsVisible,
+      missions: this.missionsVisible, guided: this.guided,
       uniform: !!this.world.player && this.world.isDisguised(this.world.player),
       power: !this.world.camerasDown, hasPlayer: !!this.world.player,
       assisted: this.adminAssisted, waitingForSwarm: this.adminStartSwarm,

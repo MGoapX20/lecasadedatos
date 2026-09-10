@@ -73,9 +73,6 @@ function materialize(
     } else if (n.kind === 'portal' && n.ref) {
       actions.push({ q: prev.arriveQ, kind: 'portalStart', id: n.ref });
       actions.push({ q: n.arriveQ, kind: 'portalEnd', id: n.ref });
-    } else if (n.kind === 'print') {
-      actions.push({ q: prev.arriveQ, kind: 'printStart', id: 'vault' });
-      actions.push({ q: n.arriveQ, kind: 'printEnd', id: 'vault' });
     }
     prev = n;
   }
@@ -306,7 +303,7 @@ function runLegs(
   }
   pickups.push({ id: legs.cardId, q });
 
-  const toVault = leg(level.vaultPlanCell, rules.vaultPrintQuanta, legs.cardId);
+  const toVault = leg(level.vaultPlanCell, 0, legs.cardId);
   if (!toVault) return null;
   take(toVault);
   const endQ = q;

@@ -73,3 +73,25 @@ admin.hide();
 Actions and setters return the current snapshot; invalid names or non-boolean
 values throw. Browser agents restricted to UI actions must use the panel instead.
 This is a local exhibition/debugging tool, not an authenticated security boundary.
+
+## Guided walkthrough
+
+Enabled by default for round 1. Use **Guided walkthrough** in either admin panel,
+or `window.casa.admin.set("guided", false)`, to toggle it. This is a visual option
+and does not mark a visit assisted. Reset stage resets the guide’s perimeter progress.
+Test both sides, any early entrance, the vent power-first branch, the supplier’s
+inner garage door, and the load/van loop. The guide observes inventory and progress;
+it never unlocks doors, grants items, moves the player, or blocks another action.
+Yellow rotating arrows mark destinations; the screen-edge arrow points toward an
+offscreen destination. Objective floor rings have been removed.
+
+The guided perimeter order is right, then left. Visible arrows are solid yellow;
+scenery-covered parts retain only an outer outline. During entry selection every
+offscreen entrance has a small text-free edge marker. Edge markers do not pulse.
+
+Vault entry has no printing interaction or waiting stage. Crossing into the vault
+room completes access and points the guide at the drill wall immediately. The
+development-only `/tools/vault-entry-check.html` fixture walks a card-carrying player
+through the real vault door without Space, checks the resulting guide target, and
+renders its arrow. The fixture supplies preparation items and removes guards;
+it does not set `breached`. The planner also has no printing dwell time.
