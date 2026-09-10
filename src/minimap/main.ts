@@ -26,14 +26,12 @@ function draw() {
   const pixels=groundContext.createImageData(m.w,m.h);
   for(let i=0;i<m.cells.length;i++)pixels.data.set([...colors[m.cells[i]===3 ? (m.indoor[i] ? 1 : 0) : m.cells[i]],255],i*4);
   groundContext.putImageData(pixels,0,0);ctx.imageSmoothingEnabled=false;ctx.drawImage(ground,0,0);
-  // Soften exposed obstacle corners without rounding walls or merging passages.
-  const blocked=(x:number,y:number)=>x>=0&&x<m.w&&y>=0&&y<m.h&&m.cells[y*m.w+x]===3;
-  ctx.fillStyle='#1a252d';ctx.beginPath();
-  for(let y=0;y<m.h;y++)for(let x=0;x<m.w;x++)if(blocked(x,y)){
-    const top=!blocked(x,y-1),bottom=!blocked(x,y+1),left=!blocked(x-1,y),right=!blocked(x+1,y);
-    ctx.roundRect(x,y,1,1,[top && left ? .48 : 0, top && right ? .48 : 0, bottom && right ? .48 : 0, bottom && left ? .48 : 0]);
-  }
-  ctx.fill();
+  // Draw one simple footprint per prop. Keep structural walls and doorways visible.
+  ctx.save();ctx.beginPath();
+  for(let y=0;y<m.h;y++)for(let x=0;x<m.w;x++)if(m.cells[y*m.w+x]!==2)ctx.rect(x,y,1,1);
+  ctx.clip();ctx.fillStyle='#1a252d';ctx.beginPath();
+  for(const obstacle of m.obstacles)ctx.roundRect(obstacle.x,obstacle.y,obstacle.width,obstacle.height,.35);
+  ctx.fill();ctx.restore();
   ctx.lineWidth=.3;
   const box=(r:readonly number[],fill:string)=>{ctx.fillStyle=fill;ctx.fillRect(r[0],r[1],r[2],r[3]);};
   const symbol=(x:number,y:number,text:string,color:string)=>{

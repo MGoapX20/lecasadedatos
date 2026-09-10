@@ -981,42 +981,6 @@
       "radius": 2
     },
     {
-      "kind": "moneyStack",
-      "cell": [
-        43,
-        25
-      ],
-      "solid": true,
-      "radius": 0.8
-    },
-    {
-      "kind": "moneyStack",
-      "cell": [
-        53,
-        25
-      ],
-      "solid": true,
-      "radius": 0.8
-    },
-    {
-      "kind": "moneyStack",
-      "cell": [
-        43,
-        37
-      ],
-      "solid": true,
-      "radius": 0.8
-    },
-    {
-      "kind": "moneyStack",
-      "cell": [
-        53,
-        37
-      ],
-      "solid": true,
-      "radius": 0.8
-    },
-    {
       "kind": "chandelier",
       "cell": [
         48,

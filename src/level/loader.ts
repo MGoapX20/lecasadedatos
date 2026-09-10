@@ -24,7 +24,7 @@ const SIGHT_BLOCKING_PROPS = new Set<PropDef['kind']>([
   'moneyStack',
 ]);
 
-const DEFAULT_PROP_RADIUS: Partial<Record<PropDef['kind'], number>> = {
+export const DEFAULT_PROP_RADIUS: Partial<Record<PropDef['kind'], number>> = {
   column: 0.9,
   desk: 1.6,
   press: 2.2,
