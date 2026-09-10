@@ -299,5 +299,6 @@
   "guide.ride": "Stay in the truck until it reaches the loading bay",
   "guide.prepare": "Collect the uniform and cut the power — in either order",
   "round1.throughSewer": "Moving through the sewer",
-  "round1.throughVent": "Moving through the air vent"
+  "round1.throughVent": "Moving through the air vent",
+  "attract.aiCredit": "Developed by AI"
 }
