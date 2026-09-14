@@ -2,6 +2,7 @@ import './style.css';
 import en from '../../strings/en.json';
 import { DISCOVERY, PROTOCOL, SnapshotInbox, channelName } from '../companion/protocol';
 import { advice, adviceKey } from './advice';
+import { fitBoard } from '../companion/fit';
 
 const display=document.querySelector<HTMLElement>('#display')!;
 const connection=document.querySelector<HTMLOutputElement>('#connection')!;
@@ -60,5 +61,6 @@ discovery.postMessage({type:'discover'});
 const chooseTimer=window.setTimeout(()=>{if(!inbox&&sources.size===1){const id=sources.keys().next().value!;select.value=id;connect(id);}else if(!inbox&&sources.size>1){select.options[0].textContent='Choose a game session';}},800);
 const timer=window.setInterval(()=>{discovery.postMessage({type:'discover'});if(!inbox&&sources.size===1){const id=sources.keys().next().value!;select.value=id;connect(id);}if(inbox?.stale(performance.now()))bus?.postMessage({type:'hello',v:PROTOCOL});render();},1000);
 document.querySelector('#fullscreen')!.addEventListener('click',async()=>{try{if(document.fullscreenElement)await document.exitFullscreen();else await document.documentElement.requestFullscreen();}catch{connection.textContent='Use your browser’s fullscreen control.';}});
-window.addEventListener('pagehide',e=>{if(!e.persisted){clearTimeout(chooseTimer);clearInterval(timer);bus?.close();discovery.close();}});
+window.addEventListener('pagehide',e=>{if(!e.persisted){stopFitting();clearTimeout(chooseTimer);clearInterval(timer);bus?.close();discovery.close();}});
 render();
+const stopFitting=fitBoard(document.querySelector<HTMLElement>('#professor-viewport')!,document.querySelector<HTMLElement>('#professor-shell')!);

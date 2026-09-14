@@ -10,3 +10,43 @@ main{width:100%;max-width:2300px;margin:0 auto;padding:30px 3vw 40px;flex:1}.mas
 .section-heading{display:flex;justify-content:space-between;align-items:end;margin:28px 0 16px;gap:20px}.section-heading h2{font:normal 27px var(--display);text-transform:uppercase;margin:0}.section-heading>span{font-size:11px;color:var(--muted)}.phase-grid{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:14px}.phase{position:relative;padding:22px;background:#14141b;border:1px solid var(--line);border-top:3px solid #40404a}.phase.active{border-top-color:var(--red);background:linear-gradient(145deg,#2c171d,#17171e)}.phase.complete{border-top-color:#7ba687}.phase-top{display:flex;justify-content:space-between;align-items:center;gap:8px;font-size:9px;color:var(--muted)}.phase-top>span{font:30px var(--display);color:#74747f}.phase.active .phase-top>span,.phase.active .phase-top b{color:#ff5864}.phase.complete .phase-top b{color:#a6c6aa}.phase h3{font:normal 20px/1.2 var(--display);text-transform:uppercase;letter-spacing:.3px;margin:19px 0 7px}.phase>p{font-size:11px;color:var(--muted);line-height:1.5;min-height:28px}.phase ul{list-style:none;padding:0;margin:15px 0 0}.phase li{display:flex;gap:9px;padding:10px 0;border-top:1px solid #30303a;font-size:12px;line-height:1.4}.check{width:16px;flex-shrink:0;color:#ff5965}.phase li small{display:block;color:#9999a5;margin-top:4px;font-size:10px}.phase li.done,.phase li.done .check{color:#a6c6aa}.phase li.hidden{color:#747480}
 footer{padding:20px 3vw;border-top:1px solid var(--line);display:flex;justify-content:space-between;gap:20px;font-size:10px;color:#94949f}footer>span:first-child{letter-spacing:2px;color:#ed6973}.standby{position:relative;isolation:isolate;overflow:hidden;border:1px solid var(--line);border-left:4px solid var(--red);min-height:55vh;padding:50px;display:flex;flex-direction:column;justify-content:center;background:#14131a}.standby:before{content:'';position:absolute;inset:0;z-index:-1;background:linear-gradient(90deg,#14131a,transparent),url('/art/professor.svg') no-repeat right center;background-size:auto,auto 130%;opacity:.25}.seal{display:none}.standby h2{font:normal clamp(30px,4vw,56px)/1.15 var(--display);text-transform:uppercase;max-width:70%;margin:10px 0}.standby>p:not(.eyebrow){max-width:570px;line-height:1.7;color:#aaaab5}.standby-steps{display:flex;gap:25px;flex-wrap:wrap;margin:28px 0;color:#e1b5b9;font-size:12px}.standby small{color:var(--muted);line-height:1.6}
 @media(min-width:1700px){.phase li{font-size:15px}.phase h3{font-size:26px}.next p{font-size:19px}.situation{padding:35px}dl div{font-size:15px;padding:16px 0}.control{font-size:15px}}@media(max-width:1100px){.brand>b{display:none}.tools label{font-size:0}.phase-grid{grid-template-columns:repeat(2,minmax(0,1fr))}.next{padding:28px}.next p,.next h2,.control{max-width:95%}.briefing{grid-template-columns:1.4fr 1fr}}@media(max-width:700px){header{flex-wrap:wrap}.tools{width:100%;justify-content:space-between}select{max-width:220px}.masthead{align-items:start;flex-direction:column;gap:14px}.briefing{grid-template-columns:1fr}.next{min-height:330px}.situation{padding:22px}.situation dl{display:grid;grid-template-columns:1fr 1fr;gap:0 20px}.phase{padding:17px}.phase h3{font-size:18px}.standby{padding:30px}.standby h2{max-width:100%}.standby-steps{gap:15px}footer{flex-wrap:wrap}}@media(max-width:420px){.phase-grid{grid-template-columns:1fr}.situation dl{grid-template-columns:1fr}.tools{gap:8px}select{max-width:190px}.section-heading{align-items:start;flex-direction:column;gap:10px}}
+
+/* Fit the whole advisor, including controls and footer, into one screen.
+   Container breakpoints follow the measured board width as it reflows. */
+html,body{height:100%;min-height:0;overflow:hidden}
+#professor-viewport{position:fixed;inset:0;overflow:hidden}
+#professor-shell{container-type:inline-size;display:flex;flex-direction:column;min-height:100dvh;transform:translateX(var(--board-offset,0px)) scale(var(--board-scale,1));transform-origin:top left}
+#professor-shell header,#professor-shell footer{flex:none;padding:14px 2.5vw}
+#professor-shell main{padding:20px 2.5vw 24px}
+#professor-shell .masthead{margin-bottom:18px;flex-direction:row;align-items:center}
+#professor-shell h1{font-size:48px}
+#professor-shell .briefing{grid-template-columns:1.8fr 1fr;gap:16px}
+#professor-shell .next{min-height:0;padding:24px 30px}
+#professor-shell .next h2{font-size:34px;margin:15px 0 12px}
+#professor-shell .next p{margin:12px 0;font-size:14px}
+#professor-shell .control{margin-top:16px;padding:10px 0}
+#professor-shell .situation{padding:22px}
+#professor-shell .situation h2{font-size:28px;margin-bottom:12px}
+#professor-shell .situation dl{display:block;margin-top:12px}
+#professor-shell .situation dl div{padding:9px 0;font-size:12px}
+#professor-shell .phase-grid{grid-template-columns:repeat(4,minmax(0,1fr))}
+#professor-shell .phase{padding:17px}
+#professor-shell .phase h3{font-size:19px;margin-top:13px}
+#professor-shell .phase>p{min-height:0;margin:7px 0}
+#professor-shell .phase ul{margin-top:10px}
+#professor-shell .phase li{padding:8px 0;font-size:12px}
+#professor-shell .section-heading{margin:20px 0 12px;flex-direction:row;align-items:end}
+#professor-shell .standby{min-height:0;flex:1;padding:40px}
+#professor-shell main:has(.standby){display:flex;flex-direction:column}
+#professor-shell main:has(.standby) #display{flex:1;display:flex;flex-direction:column}
+@container(max-width:1000px){
+ #professor-shell .phase-grid{grid-template-columns:repeat(2,minmax(0,1fr))}
+ #professor-shell header{flex-wrap:wrap;gap:12px}
+ #professor-shell .tools{width:auto;margin-left:auto}
+ #professor-shell .brand>b{display:none}
+}
+@container(max-width:600px){
+ #professor-shell .briefing{grid-template-columns:1fr}
+ #professor-shell .situation dl{display:grid;grid-template-columns:1fr 1fr;gap:0 20px}
+ #professor-shell .masthead{align-items:start;flex-direction:column;gap:10px}
+}
