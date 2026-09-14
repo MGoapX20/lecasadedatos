@@ -13,6 +13,7 @@ import { PauseMenu } from './game/menu';
 import { mountAdmin } from './game/admin';
 import { publishAdmin } from './game/admin-channel';
 import { mountMinimap } from './minimap/publisher';
+import { mountHudMinimap } from './minimap/hud';
 import { Overlay } from './ui/overlay';
 import { applyDocumentLang } from './ui/i18n';
 import { mountCompanion } from './companion/publisher';
@@ -90,6 +91,7 @@ async function boot(): Promise<void> {
   flow.enter('attract');
   publishAdmin(admin);
   const minimap = mountMinimap(flow, () => companion.source);
+  const hudMinimap = mountHudMinimap(flow, () => menu.open);
 
   const loop = new GameLoop(
     () => flow.tickSim(),
@@ -103,6 +105,7 @@ async function boot(): Promise<void> {
       admin.update();
       companion.update(performance.now());
       minimap.update(performance.now());
+      hudMinimap.update(performance.now());
       stage.render(director, dtMs);
     },
   );

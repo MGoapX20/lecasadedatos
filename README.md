@@ -57,6 +57,10 @@ matching live map. Reload an older game tab to enable the detailed mission feed.
 
 ### Live top-down map
 
+The map is also embedded in the lower-left game HUD during attacker and defender
+gameplay. It uses the same renderer and current world state as the standalone map,
+resizes with the screen, and hides during menus, briefings and results.
+
 Open `/minimap.html` in another tab on the same origin (also listed in the admin
 panel). Select a game session to follow its live state. The fixed view fits the
 entire bank and pavement and shows walls, blocking furniture, entrances, remaining
