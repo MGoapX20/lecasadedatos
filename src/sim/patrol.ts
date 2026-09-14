@@ -148,11 +148,13 @@ function routeWaypoints(level: Level, waypoints: PatrolWaypoint[], loop: boolean
   const holds: number[] = [];
   const n = waypoints.length;
   const pairs = loop ? n : n - 1;
+  let endCell = cellOf(level, waypoints[0].cell);
   for (let i = 0; i < pairs; i++) {
     const a = cellOf(level, waypoints[i].cell);
     const b = cellOf(level, waypoints[(i + 1) % n].cell);
     const path = guardPath(level, a, b);
     const cells = path ? simplifyPath(path, level.walkGuard, level.w, level.h) : [a, b];
+    endCell = cells[cells.length - 1];
     for (let k = 0; k < cells.length - 1; k++) {
       const c = cells[k];
       points.push([(c % level.w) + 0.5, ((c / level.w) | 0) + 0.5]);
@@ -160,9 +162,19 @@ function routeWaypoints(level: Level, waypoints: PatrolWaypoint[], loop: boolean
     }
   }
   if (!loop) {
-    const last = cellOf(level, waypoints[n - 1].cell);
-    points.push([(last % level.w) + 0.5, ((last / level.w) | 0) + 0.5]);
+    points.push([(endCell % level.w) + 0.5, ((endCell / level.w) | 0) + 0.5]);
     holds.push(waypoints[n - 1].holdTicks ?? 0);
+    // An open patrol retraces the routed path, including detours around props.
+    // Endpoints pause once per visit; the first hold belongs to the next cycle.
+    for (let i = points.length - 2; i >= 0; i--) {
+      points.push([...points[i]]);
+      holds.push(i === 0 ? 0 : holds[i]);
+    }
+  } else if (points.length > 0) {
+    // Each leg omits its endpoint because the next leg supplies it. The final
+    // leg has no successor: close it explicitly before the timetable wraps.
+    points.push([...points[0]]);
+    holds.push(0);
   }
   if (points.length === 0) {
     const c = cellOf(level, waypoints[0].cell);

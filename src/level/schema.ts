@@ -80,6 +80,7 @@ export interface GuardDef {
   id: string;
   nameKey: string;
   vision: { fovDeg: number; range: number };
+  /** Closed circuit when loop is true; otherwise retrace the route back to the start. */
   patrol: { loop: boolean; waypoints: PatrolWaypoint[]; speed?: number };
 }
 
