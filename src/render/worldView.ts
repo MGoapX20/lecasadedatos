@@ -49,6 +49,9 @@ import { PALETTE, THIEF_TINTS, wayColor } from './palette';
 import { CanvasTexture, PointLight, SRGBColorSpace, Sprite, SpriteMaterial } from 'three';
 import type { Stage } from './renderer';
 import { DISGUISE_RANGE_MUL } from '../sim/world';
+import type { ObjectPose, SceneSnapshot } from '../agent-views/state';
+import type { CharacterPose } from './characters';
+import { BakedCharacterBatch } from './bakedCharacters';
 
 interface Anim {
   phase: number;
@@ -145,6 +148,8 @@ export class WorldView {
   private fx = makeFxGroup();
   private anims = new Map<number, Anim>();
   private thiefSlots = new Map<number, number>();
+  private agentPoses = new Map<number, CharacterPose>();
+  private guardPoses: CharacterPose[] = [];
   private freeSlots: number[] = [];
   /** A red disc under every thief, so a crowd still reads from across a hall. */
   private thiefMarks: InstancedMesh;
@@ -179,15 +184,16 @@ export class WorldView {
 
   constructor(
     readonly level: Level,
-    private readonly stage: Stage,
+    private readonly stage: Pick<Stage, 'scene' | 'vaultLight' | 'lobbyLight' | 'setNight'>,
     readonly models: ModelLib,
     capacity = Math.max(16, config.swarmSize + 4),
+    spectator = false,
   ) {
     this.building = buildBuilding(level, models);
     this.root.add(this.building.root);
     this.baseBanners = new BaseBanners(level);
     this.root.add(this.baseBanners.root);
-    this.city = buildCity(level, models);
+    this.city = spectator ? { root: new Group(), beacons: new Mesh(), update() {} } : buildCity(level, models);
     this.root.add(this.city.root);
     const truckTpl = models.props.get('truck');
     if (truckTpl && level.json.delivery) {
@@ -195,8 +201,8 @@ export class WorldView {
       this.root.add(this.truck);
     }
     if (level.json.exfil) this.buildExfil(models, level.json.exfil.loads);
-    this.thieves = makeThiefBatch(capacity, models);
-    this.guards = makeGuardBatch(Math.max(4, level.json.guards.length), models);
+    this.thieves = spectator && models.thief ? new BakedCharacterBatch(capacity, models.thief, models.guard) : makeThiefBatch(capacity, models);
+    this.guards = spectator && models.guard ? new BakedCharacterBatch(Math.max(4, level.json.guards.length), models.guard) : makeGuardBatch(Math.max(4, level.json.guards.length), models);
     const markGeo = new CircleGeometry(0.62, 14);
     markGeo.rotateX(-Math.PI / 2);
     this.thiefMarks = new InstancedMesh(
@@ -399,28 +405,56 @@ export class WorldView {
     this.building.setCutaway(cut);
   }
 
-  /** Render from the actual agent pose, with full walls and no camera-wearer body. */
-  withAgentView(t: Thief, render: (x: number, eye: number, z: number) => void): void {
-    const cut = this.building.shellCut.visible;
-    const overlays = [this.thiefMarks, this.fx, this.trails.object, this.ribbons.object,
-      this.selectRing, this.orderPulse.mesh, this.thiefPulse.mesh, ...this.guardRings,
-      ...this.doorMarks, ...this.guardGlyphs, ...this.cameraGlyphs];
-    const visibility = overlays.map(object => object.visible);
-    const a = this.anims.get(t.id);
-    const draw = () => render(
-      fineXYToWorldX(this.level, a?.smoothX ?? t.x),
-      t.lockpickDoor >= 0 || t.blockedByDoor >= 0 || t.waiting ? 1.25 : 1.6,
-      fineXYToWorldZ(this.level, a?.smoothY ?? t.y),
-    );
-    try {
-      this.building.setCutaway(false);
-      overlays.forEach(object => { object.visible = false; });
-      const slot = this.thiefSlots.get(t.id);
-      if (slot === undefined) draw(); else this.thieves.withHidden(slot, draw);
-    } finally {
-      this.building.setCutaway(cut);
-      overlays.forEach((object, i) => { object.visible = visibility[i]; });
+  /** Small read-only scene state: no rendering, GPU readback, image encoding, or simulation work. */
+  captureAgentScene(world: SimWorld): SceneSnapshot {
+    const pose = (object: Object3D): ObjectPose => ({ position: object.position.toArray(),
+      quaternion: object.quaternion.toArray(), scale: object.scale.toArray(), visible: object.visible });
+    return { tick: world.tick, thieves: [...this.agentPoses].map(([id, pose]) => ({ id, pose })), guards: this.guardPoses,
+      doors: [...this.building.doorHinges].map(([id, object]) => [id, object.rotation.y]),
+      cameras: [...this.building.cameras].map(([id, object]) => [id, object.rotation.y]),
+      keys: [...this.building.keycards].map(([id, key]) => [id, pose(key.root), pose(key.card)]),
+      hole: world.holeOpen, power: !world.camerasDown,
+      truck: this.truck ? pose(this.truck) : null, van: this.van ? pose(this.van) : null };
+  }
+
+  /** Apply a display replica only; this view has no simulation or planner. */
+  applyAgentScene(snapshot: SceneSnapshot, previous: SceneSnapshot | null, alpha: number, dt: number): void {
+    const old = new Map(previous?.thieves.map(t => [t.id, t.pose]));
+    const blend = (pose: CharacterPose, from?: CharacterPose): CharacterPose => {
+      if (!from || !from.visible || !pose.visible) return pose;
+      const turn = Math.atan2(Math.sin(pose.facingRad - from.facingRad), Math.cos(pose.facingRad - from.facingRad));
+      return { ...pose, x: from.x + (pose.x - from.x) * alpha, z: from.z + (pose.z - from.z) * alpha,
+        facingRad: from.facingRad + turn * alpha };
+    };
+    for (const actor of snapshot.thieves) {
+      const slot = this.slotFor(actor);
+      const pose = blend(actor.pose, old.get(actor.id));
+      this.agentPoses.set(actor.id, pose);
+      if (slot >= 0) this.thieves.setPose(slot, pose);
     }
+    snapshot.guards.forEach((pose, i) => this.guards.setPose(i, blend(pose, previous?.guards[i])));
+    this.thieves.flush(); this.guards.flush(); this.thieves.update(dt); this.guards.update(dt);
+    for (const [id, angle] of snapshot.doors) { const o = this.building.doorHinges.get(id); if (o) o.rotation.y = angle; }
+    for (const [id, angle] of snapshot.cameras) { const o = this.building.cameras.get(id); if (o) o.rotation.y = angle; }
+    const apply = (object: Object3D | null, pose: ObjectPose | null) => {
+      if (!object || !pose) return;
+      object.position.fromArray(pose.position); object.quaternion.fromArray(pose.quaternion);
+      object.scale.fromArray(pose.scale); object.visible = pose.visible;
+    };
+    for (const [id, root, card] of snapshot.keys) { const key = this.building.keycards.get(id); if (key) { apply(key.root, root); apply(key.card, card); } }
+    apply(this.truck, snapshot.truck); apply(this.van, snapshot.van);
+    this.building.setHole(snapshot.hole); this.building.setCutaway(false);
+    for (const beam of this.building.cameraBeams.values()) beam.visible = false;
+    // Omit overhead cues and distant city scenery in the small first-person views.
+    for (const object of [this.city.root, this.fx, this.trails.object, this.ribbons.object, this.thiefMarks,
+      this.selectRing, this.playerRing, this.orderPulse.mesh, this.thiefPulse.mesh, ...this.guardRings,
+      ...this.doorMarks, ...this.guardGlyphs, ...this.cameraGlyphs]) object.visible = false;
+  }
+
+  withAgentCamera(id: number, render: (x: number, eye: number, z: number, facing: number) => void): void {
+    const pose = this.agentPoses.get(id), slot = this.thiefSlots.get(id);
+    if (!pose || slot === undefined) return;
+    this.thieves.withHidden(slot, () => render(pose.x, pose.crouch ? 1.25 : 1.6, pose.z, pose.facingRad));
   }
 
   /** The breach, the van driving up, and the money going into it. */
@@ -526,7 +560,7 @@ export class WorldView {
     for (const c of this.cameraCones) c.mesh.visible = v;
   }
 
-  private slotFor(t: Thief): number {
+  private slotFor(t: Pick<Thief, 'id'>): number {
     let s = this.thiefSlots.get(t.id);
     if (s === undefined) {
       s = this.freeSlots.pop() ?? -1;
@@ -540,11 +574,13 @@ export class WorldView {
     const s = this.thiefSlots.get(id);
     if (s === undefined) return;
     this.thiefSlots.delete(id);
+    this.agentPoses.delete(id);
     this.freeSlots.push(s);
     this.anims.delete(id);
   }
 
   resetAgents(): void {
+    this.agentPoses.clear();
     this.thieves.hideAll();
     for (let i = 0; i < this.thieves.capacity; i++) this.thiefMarks.setMatrixAt(i, this.markHide);
     this.thiefMarks.instanceMatrix.needsUpdate = true;
@@ -645,6 +681,7 @@ export class WorldView {
         loneZ = pose.z;
       }
       this.thieves.setPose(slot, pose);
+      this.agentPoses.set(t.id, pose);
       if (visible) {
         this.markScratch.position.set(pose.x, 0.07, pose.z);
         this.markScratch.rotation.set(0, 0, 0);
@@ -691,6 +728,7 @@ export class WorldView {
       pose.moving = Math.min(1, (moved / cs) * 6);
       pose.scale = 1.4;
       this.guards.setPose(i, pose);
+      this.guardPoses[i] = pose;
 
       const glyph = this.guardGlyphs[i];
       if (glyph) {

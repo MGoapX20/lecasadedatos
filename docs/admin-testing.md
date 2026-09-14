@@ -80,12 +80,15 @@ Open `/professor.html?game=<session-id>` alongside the game. Start round 1 and
 verify mission advice, then use Skip stage through the result and defense briefing
 to `round2a`. The same page must switch to Agent Views and add the lone attacker
 when planning completes. Skip through `aiThink` into `round2b` and verify new
-camera tiles arrive with pop-in animations, reflow without scrolling, and update
-from each agent's position/facing. A caught or retired agent retains its last view
-with its outcome; hidden transit shows a status instead of an invented tunnel.
+one tile per HUD way arrives with pop-in animations and reflows without scrolling.
+The header distinguishes total agents from ways. Each tile follows one live agent
+for that way and hands off to another survivor without adding a tile. After the last
+agent finishes, retain the last view with the outcome. Hidden transit shows a status.
 Pause to check that the views freeze with the world. Reset stage to clear old feeds;
 restart or start round 1 to restore the Professor layout. Test with reduced motion
 enabled to suppress animations. Reload the game afterward to restore defaults.
+The development-only `/tools/agent-view-check.html` stress fixture uses 80 synthetic
+actors across 20 ways; verify 20 views and at most four camera renders per frame.
 
 ## Guided walkthrough
 

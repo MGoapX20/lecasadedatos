@@ -1,6 +1,6 @@
 import { expect, it } from 'vitest';
 import { InstancedMesh, Matrix4 } from 'three';
-import { agentInfo, defenseStage, gridShape } from '../src/agent-views/state';
+import { agentInfo, defenseStage, gridShape, wayViews } from '../src/agent-views/state';
 import { makeThiefBatch, blankCharacterPose } from '../src/render/characters';
 import { SimWorld } from '../src/sim/world';
 import { loadMint } from './helpers';
@@ -32,6 +32,29 @@ it('fits every agent from one to a full swarm into wide and narrow screens', () 
       expect((height-(rows-1)*10)/rows).toBeGreaterThan(0);
     }
   }
+});
+
+it('shows exactly the HUD way rows even when eighty agents share twenty ways', () => {
+  const world = new SimWorld(loadMint(), 9);
+  const thieves = Array.from({ length: 80 }, (_, id) => ({ ...world.spawnPlayer('front', `Agent ${id}`), id }));
+  const ways = Array.from({ length: 20 }, (_, id) => ({ id, name: `Way ${id + 1}`, agentIds: [id * 4, id * 4 + 1, id * 4 + 2, id * 4 + 3] }));
+  const views = wayViews(ways, thieves, new Map());
+  expect(views).toHaveLength(20);
+  expect(views.every(v => v.total === 4 && v.active === 4)).toBe(true);
+  expect(views.map(v => v.id)).toEqual(ways.map(w => w.id));
+});
+
+it('keeps a stable live camera and switches to a surviving agent without adding a way', () => {
+  const world = new SimWorld(loadMint(), 9);
+  const a = world.spawnPlayer('front', 'First'), b = world.spawnPlayer('front', 'Second');
+  a.hidden = b.hidden = false;
+  const ways = [{ id: 0, name: 'Front', agentIds: [a.id, b.id] }], selected = new Map<number, number>();
+  expect(wayViews(ways, [a, b], selected)[0].agentId).toBe(a.id);
+  expect(wayViews(ways, [b, a], selected)[0].agentId).toBe(a.id);
+  a.caught = true;
+  expect(wayViews(ways, [a, b], selected)).toMatchObject([{ id: 0, agentId: b.id, active: 1, total: 2 }]);
+  // Replanning can leave an old HUD way with no agents; retain its row to keep counts identical.
+  expect(wayViews([{ ...ways[0], agentIds: [] }], [a, b], selected)).toMatchObject([{ id: 0, live: false, total: 0 }]);
 });
 
 it('restores the camera wearer and leaves other agents intact even after a render failure', () => {

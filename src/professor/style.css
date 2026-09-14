@@ -36,3 +36,9 @@ main{width:100%;max-width:2100px;margin:0 auto;padding:30px 4vw 40px;flex:1;disp
 @keyframes board-reveal{from{opacity:0;transform:translateY(12px)}to{opacity:1;transform:none}}
 @media(prefers-reduced-motion:reduce){#agent-board,.agent-new,.agent-new:after{animation:none}}
 .agent-caption{font-size:14px}.dense .agent-caption{font-size:11px;padding:15px 6px 5px}.dense .agent-cover{font-size:15px}
+.agent-grid{position:relative;isolation:isolate}
+.agent-grid>.agent-surface{position:absolute;inset:0;width:100%;height:100%;z-index:0;pointer-events:none}
+.agent-tile{z-index:1;background:transparent;box-shadow:none}
+.agent-image{position:absolute;inset:0}
+.agent-tile[data-live=false] .agent-image{background:#10101570}
+.agent-caption strong{font-size:12px}.dense .agent-caption strong{font-size:10px}

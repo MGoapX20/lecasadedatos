@@ -111,6 +111,14 @@ export class GameFlow {
   /** The distinct ways in, in reveal order: the thing the whole exhibit is about. */
   private ways: WayInfo[] = [];
   private wayOf = new Map<number, number>();
+
+  /** The same way identities and order used by the defense HUD, including replans. */
+  get agentViewWays() {
+    if (this.state === 'round2a') return [{ id: 0, name: 'Single attacker', agentIds: this.world.thieves.filter(t => t.kind === 'plan').map(t => t.id) }];
+    if (this.state !== 'round2b') return [];
+    return this.ways.map((way, id) => ({ id, name: `Way ${id + 1} · ${way.name}`,
+      agentIds: this.world.thieves.filter(t => this.wayOf.get(t.id) === id).map(t => t.id) }));
+  }
   private thinkDurationMs: number = TIMERS.aiThink;
   private banner: { text: string; until: number } | null = null;
   private selectedGuard = -1;

@@ -93,7 +93,7 @@ async function boot(): Promise<void> {
   publishAdmin(admin);
   const minimap = mountMinimap(flow, () => companion.source);
   const hudMinimap = mountHudMinimap(flow, () => menu.open);
-  const agentViews = mountAgentViews(flow, stage, view, () => companion.source);
+  const agentViews = mountAgentViews(flow, view, () => companion.source);
 
   const loop = new GameLoop(
     () => flow.tickSim(),
