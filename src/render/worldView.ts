@@ -399,6 +399,30 @@ export class WorldView {
     this.building.setCutaway(cut);
   }
 
+  /** Render from the actual agent pose, with full walls and no camera-wearer body. */
+  withAgentView(t: Thief, render: (x: number, eye: number, z: number) => void): void {
+    const cut = this.building.shellCut.visible;
+    const overlays = [this.thiefMarks, this.fx, this.trails.object, this.ribbons.object,
+      this.selectRing, this.orderPulse.mesh, this.thiefPulse.mesh, ...this.guardRings,
+      ...this.doorMarks, ...this.guardGlyphs, ...this.cameraGlyphs];
+    const visibility = overlays.map(object => object.visible);
+    const a = this.anims.get(t.id);
+    const draw = () => render(
+      fineXYToWorldX(this.level, a?.smoothX ?? t.x),
+      t.lockpickDoor >= 0 || t.blockedByDoor >= 0 || t.waiting ? 1.25 : 1.6,
+      fineXYToWorldZ(this.level, a?.smoothY ?? t.y),
+    );
+    try {
+      this.building.setCutaway(false);
+      overlays.forEach(object => { object.visible = false; });
+      const slot = this.thiefSlots.get(t.id);
+      if (slot === undefined) draw(); else this.thieves.withHidden(slot, draw);
+    } finally {
+      this.building.setCutaway(cut);
+      overlays.forEach((object, i) => { object.visible = visibility[i]; });
+    }
+  }
+
   /** The breach, the van driving up, and the money going into it. */
   private updateExfil(world: SimWorld, level: Level): void {
     if (!level.json.exfil) return;

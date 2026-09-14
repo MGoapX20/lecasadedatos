@@ -3,11 +3,16 @@ import en from '../../strings/en.json';
 import { DISCOVERY, PROTOCOL, SnapshotInbox, channelName } from '../companion/protocol';
 import { advice, adviceKey } from './advice';
 import { fitBoard } from '../companion/fit';
+import { mountAgentBoard } from '../agent-views/board';
+import { defenseStage } from '../agent-views/state';
 
 const display=document.querySelector<HTMLElement>('#display')!;
 const connection=document.querySelector<HTMLOutputElement>('#connection')!;
 const select=document.querySelector<HTMLSelectElement>('#sessions')!;
 const mapLink=document.querySelector<HTMLAnchorElement>('#map-link')!;
+const agentHost=document.createElement('section');
+agentHost.id='agent-board';agentHost.hidden=true;display.after(agentHost);
+const agentBoard=mountAgentBoard(agentHost);
 const esc=(s:string)=>s.replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]!));
 const text=(key:string)=>(en as Record<string,string>)[key]??key;
 let inbox:SnapshotInbox|null=null,bus:BroadcastChannel|null=null,offline=false,last='';
@@ -17,6 +22,7 @@ const paired=new URL(location.href).searchParams.get('game');
 
 function connect(id:string){
   bus?.close();inbox=new SnapshotInbox(id);offline=false;last='';
+  agentBoard.setSource(id);
   const url=new URL(location.href);url.searchParams.set('game',id);history.replaceState(null,'',url);
   mapLink.href=`minimap.html?game=${encodeURIComponent(id)}`;
   bus=new BroadcastChannel(channelName(id));
@@ -29,8 +35,14 @@ function connect(id:string){
 }
 function render(){
   const s=inbox?.latest,stale=!inbox||inbox.stale(performance.now())||offline;
-  connection.textContent=stale?'Waiting for game':s?.paused?'Paused':s?.suspended?'Game in background':s?.state==='round1'?'Live':'Standby';
-  connection.dataset.live=String(!stale&&s?.state==='round1'&&!s.paused&&!s.suspended);
+  const defense=defenseStage(s?.state??'');
+  agentBoard.setStage(s?.state??'');
+  document.querySelector('#professor-shell')!.classList.toggle('defense',defense);
+  document.querySelector('h1')!.textContent=defense?'AGENT VIEWS':'THE PROFESSOR';
+  display.hidden=defense;
+  connection.textContent=stale?'Waiting for game':s?.paused?'Paused':s?.suspended?'Game in background':s?.state==='round1'||defense?'Live':'Standby';
+  connection.dataset.live=String(!stale&&(s?.state==='round1'||defense)&&!s?.paused&&!s?.suspended);
+  if(defense)return;
   let html='';
   if(!s||s.state!=='round1'){
     html=`<section class="standby"><h2>Ready when you are.</h2><p>${s?'Start the attacker round to see your next move.':'Open the game and select its session above.'}</p></section>`;
@@ -61,6 +73,6 @@ discovery.postMessage({type:'discover'});
 const chooseTimer=window.setTimeout(()=>{if(!inbox&&sources.size===1){const id=sources.keys().next().value!;select.value=id;connect(id);}else if(!inbox&&sources.size>1){select.options[0].textContent='Choose a game session';}},800);
 const timer=window.setInterval(()=>{discovery.postMessage({type:'discover'});if(!inbox&&sources.size===1){const id=sources.keys().next().value!;select.value=id;connect(id);}if(inbox?.stale(performance.now()))bus?.postMessage({type:'hello',v:PROTOCOL});render();},1000);
 document.querySelector('#fullscreen')!.addEventListener('click',async()=>{try{if(document.fullscreenElement)await document.exitFullscreen();else await document.documentElement.requestFullscreen();}catch{connection.textContent='Use your browser’s fullscreen control.';}});
-window.addEventListener('pagehide',e=>{if(!e.persisted){stopFitting();clearTimeout(chooseTimer);clearInterval(timer);bus?.close();discovery.close();}});
+window.addEventListener('pagehide',e=>{if(!e.persisted){agentBoard.dispose();stopFitting();clearTimeout(chooseTimer);clearInterval(timer);bus?.close();discovery.close();}});
 render();
 const stopFitting=fitBoard(document.querySelector<HTMLElement>('#professor-viewport')!,document.querySelector<HTMLElement>('#professor-shell')!);

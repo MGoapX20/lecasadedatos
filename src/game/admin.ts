@@ -34,7 +34,7 @@ export function mountAdmin(flow: AdminHost, closeMenu: () => void, standalone = 
     { label: 'Game (HTML entry)', path: 'index.html' },
     { label: 'Standalone admin page', path: 'admin.html' },
     { label: 'Live top-down map', path: 'minimap.html' },
-    { label: 'The Professor — missions and advice', path: 'professor.html' },
+    { label: 'The Professor — missions / live agent views', path: 'professor.html' },
     { label: 'Red-team companion (session picker)', path: 'red-team.html' },
     ...(import.meta.env.DEV ? [{ label: 'Highlight rendering check (development only)', path: 'tools/highlight-check.html' }] : []),
     ...(import.meta.env.DEV ? [{ label: 'Camera power regression (development only)', path: 'tools/power-check.html' }] : []),

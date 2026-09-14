@@ -74,6 +74,19 @@ Actions and setters return the current snapshot; invalid names or non-boolean
 values throw. Browser agents restricted to UI actions must use the panel instead.
 This is a local exhibition/debugging tool, not an authenticated security boundary.
 
+## Professor / defense camera board
+
+Open `/professor.html?game=<session-id>` alongside the game. Start round 1 and
+verify mission advice, then use Skip stage through the result and defense briefing
+to `round2a`. The same page must switch to Agent Views and add the lone attacker
+when planning completes. Skip through `aiThink` into `round2b` and verify new
+camera tiles arrive with pop-in animations, reflow without scrolling, and update
+from each agent's position/facing. A caught or retired agent retains its last view
+with its outcome; hidden transit shows a status instead of an invented tunnel.
+Pause to check that the views freeze with the world. Reset stage to clear old feeds;
+restart or start round 1 to restore the Professor layout. Test with reduced motion
+enabled to suppress animations. Reload the game afterward to restore defaults.
+
 ## Guided walkthrough
 
 Enabled by default for round 1. Use **Guided walkthrough** in either admin panel,

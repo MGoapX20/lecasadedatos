@@ -17,6 +17,7 @@ import { mountHudMinimap } from './minimap/hud';
 import { Overlay } from './ui/overlay';
 import { applyDocumentLang } from './ui/i18n';
 import { mountCompanion } from './companion/publisher';
+import { mountAgentViews } from './agent-views/publisher';
 
 /** Degrees of view rotation per pixel of middle-drag. */
 const ORBIT_AZ_PER_PX = 0.3;
@@ -92,6 +93,7 @@ async function boot(): Promise<void> {
   publishAdmin(admin);
   const minimap = mountMinimap(flow, () => companion.source);
   const hudMinimap = mountHudMinimap(flow, () => menu.open);
+  const agentViews = mountAgentViews(flow, stage, view, () => companion.source);
 
   const loop = new GameLoop(
     () => flow.tickSim(),
@@ -107,6 +109,7 @@ async function boot(): Promise<void> {
       minimap.update(performance.now());
       hudMinimap.update(performance.now());
       stage.render(director, dtMs);
+      agentViews.update(performance.now());
     },
   );
   loop.start();

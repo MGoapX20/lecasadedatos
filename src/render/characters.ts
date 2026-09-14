@@ -61,6 +61,8 @@ export interface CharacterBatch {
   /** Advance animation clocks; the box figures have none. */
   update(dtSec: number): void;
   hideAll(): void;
+  /** Omit only the camera wearer for an offscreen first-person render. */
+  withHidden(index: number, render: () => void): void;
   dispose(): void;
 }
 
@@ -242,6 +244,16 @@ export class BoxCharacterBatch implements CharacterBatch {
 
   update(): void {}
 
+  withHidden(index: number, render: () => void): void {
+    const saved = this.parts.map(p => { const m = new Matrix4(); p.mesh.getMatrixAt(index, m); return m; });
+    try {
+      for (const p of this.parts) { p.mesh.setMatrixAt(index, new Matrix4().makeScale(0, 0, 0)); p.mesh.instanceMatrix.needsUpdate = true; }
+      render();
+    } finally {
+      this.parts.forEach((p, i) => { p.mesh.setMatrixAt(index, saved[i]); p.mesh.instanceMatrix.needsUpdate = true; });
+    }
+  }
+
   flush(): void {
     for (const p of this.parts) {
       p.mesh.instanceMatrix.needsUpdate = true;
@@ -364,6 +376,14 @@ export class SkinnedCharacterBatch implements CharacterBatch {
       s.node.visible = false;
       if (s.alt) s.alt.visible = false;
     }
+  }
+
+  withHidden(index: number, render: () => void): void {
+    const slot = this.slots[index];
+    if (!slot) { render(); return; }
+    const visible = slot.node.visible, altVisible = slot.alt?.visible;
+    try { slot.node.visible = false; if (slot.alt) slot.alt.visible = false; render(); }
+    finally { slot.node.visible = visible; if (slot.alt) slot.alt.visible = !!altVisible; }
   }
 
   setPose(index: number, pose: CharacterPose): void {

@@ -51,7 +51,14 @@ Open `/professor.html` for a full-page mission advisor for the first attacker ro
 It follows the selected game session, shows the four mission phases and suggests
 the next action, including lockpicking, wire cutting, drilling and document delivery.
 Advice stays available when in-game arrows or the mission bar are hidden.
-It shows standby during defense and other stages. Use `?game=<session-id>` to keep
+During single-agent and swarm defense it automatically becomes a live first-person
+camera grid. New agents pop into the grid as they spawn; their current action and
+final outcome stay on each tile. Transit has a status card because underground
+passages are simulated rather than modeled. The grid fits the whole screen and
+honors reduced-motion settings. Capture runs only while a visible board subscribes;
+camera updates are spread across game frames to limit rendering cost. Keep the game
+visible alongside the board for continuous simulation. Other stages show standby.
+Use `?game=<session-id>` to keep
 it paired with one game. The admin page lists the URL; the page also links to the
 matching live map. Reload an older game tab to enable the detailed mission feed.
 
