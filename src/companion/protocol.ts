@@ -42,6 +42,7 @@ export interface StandbySnapshot extends SnapshotBase {
   state: Exclude<GameState, 'round1'>;
 }
 export interface ThiefSnapshot extends SnapshotBase {
+  professor?: { phases: import('../game/missions').Phase[]; guide: string | null };
   state: 'round1';
   phase: PhaseId | null;
   objectives: { id: string; state: 'hidden' | 'open' | 'done' }[];

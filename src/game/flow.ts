@@ -126,6 +126,8 @@ export class GameFlow {
   readonly walkthrough = new GuidedWalkthrough();
   guided = true;
   private guideStep: GuideStep | null = null;
+  /** Advice remains available to The Professor when in-game arrows are disabled. */
+  advisoryStep: GuideStep | null = null;
   /** Guard highlighted by the operator panel. */
   presenterGuard = -1;
   private replanningUntil = 0;
@@ -371,6 +373,7 @@ export class GameFlow {
     this.missions.reset();
     this.walkthrough.reset();
     this.guideStep = null;
+    this.advisoryStep = null;
     this.d.overlay.resetMissions();
     this.session.round1.entriesTried.add(entry.id);
   }
@@ -690,7 +693,8 @@ export class GameFlow {
       this.d.audio.play('confirm');
     }
 
-    this.guideStep = this.guided ? this.walkthrough.update(this.world, level, this.missions) : null;
+    this.advisoryStep = this.walkthrough.update(this.world, level, this.missions);
+    this.guideStep = this.guided ? this.advisoryStep : null;
     this.d.view.setGuideTargets(this.guideStep?.targets ?? []);
     this.updateObjectiveArrow();
 

@@ -45,6 +45,16 @@ The kiosk script also keeps the laptop awake. Everything is served from
 
 ## Controls
 
+### The Professor
+
+Open `/professor.html` for a full-page mission advisor for the first attacker round.
+It follows the selected game session, shows the four mission phases and suggests
+the next action, including lockpicking, wire cutting, drilling and document delivery.
+Advice stays available when in-game arrows or the mission bar are hidden.
+It shows standby during defense and other stages. Use `?game=<session-id>` to keep
+it paired with one game. The admin page lists the URL; the page also links to the
+matching live map. Reload an older game tab to enable the detailed mission feed.
+
 ### Live top-down map
 
 Open `/minimap.html` in another tab on the same origin (also listed in the admin

@@ -10,7 +10,7 @@ import type {
 export type ProjectionSource = Pick<
   GameFlow,
   'state' | 'world' | 'session' | 'missions' | 'paused' | 'displayState'
->;
+> & Partial<Pick<GameFlow, 'advisoryStep'>>;
 
 /** No DOM, renderer, or changes to the simulation: this is only a projection. */
 export class SnapshotProjector {
@@ -152,6 +152,9 @@ export class SnapshotProjector {
       tick: w.tick,
       phase: flow.missions.activePhase?.id ?? 'recon',
       objectives,
+      professor: { phases: phases.map(phase => ({ ...phase,
+        objectives: phase.objectives.map(objective => ({ ...objective })) })),
+        guide: flow.advisoryStep?.id ?? null },
       focusEntry: focus,
       player: p
         ? {
