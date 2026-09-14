@@ -29,21 +29,21 @@ function connect(id:string){
 }
 function render(){
   const s=inbox?.latest,stale=!inbox||inbox.stale(performance.now())||offline;
-  connection.textContent=stale?'Waiting for game':s?.paused?'Game paused':s?.suspended?'Game in background':s?.state==='round1'?'Live · Attacker round':'Ready · Attacker round only';
+  connection.textContent=stale?'Waiting for game':s?.paused?'Paused':s?.suspended?'Game in background':s?.state==='round1'?'Live':'Standby';
   connection.dataset.live=String(!stale&&s?.state==='round1'&&!s.paused&&!s.suspended);
   let html='';
   if(!s||s.state!=='round1'){
-    html=`<section class="standby"><div class="seal">P</div><p class="eyebrow">BRIEFING ROOM</p><h2>${s?'Waiting for the next mission.':'Your next move starts here.'}</h2><p>Start the first attacker round in the game. I’ll follow your progress, track your objectives, and suggest what to do next.</p><div class="standby-steps"><span>01 &nbsp; Reconnaissance</span><span>02 &nbsp; Initial access</span><span>03 &nbsp; Lateral movement</span><span>04 &nbsp; Data extraction</span></div><small>${s?'The Professor is on standby outside the attacker round.':'Open or reload the game in another tab, then select its session above.'}</small></section>`;
+    html=`<section class="standby"><h2>Ready when you are.</h2><p>${s?'Start the attacker round to see your next move.':'Open the game and select its session above.'}</p></section>`;
   }else{
-    const key=adviceKey(s),[title,detail,control]=advice[key]??advice.entry;
+    const key=adviceKey(s),[title,,control]=advice[key]??advice.entry;
     const phases=s.professor?.phases??[];
     const active=phases.find(p=>p.active);
-    const completed=phases.filter(p=>p.done).length;
-    const status=[['Uniform',s.player?.disguised?'Equipped':'Not equipped'],['Cameras',s.security.camerasDown?'Offline':'Online'],['Access card',s.player?.card?'Collected':'Not collected'],['Documents',`${s.exfil.loads} / ${s.exfil.needed} delivered`]];
-    html=`${stale?'<div class="notice">Connection lost — showing the last received mission. Reopen the game to resume live advice.</div>':s.paused||s.suspended?'<div class="notice">The game is paused or in the background. Advice reflects its last reported state.</div>':''}
-      <section class="briefing"><article class="next"><div class="eyebrow">NEXT MOVE <span>→</span></div><h2>${esc(title)}</h2><p>${esc(detail)}</p><div class="control">${esc(control)}</div><div class="signature">— The Professor</div></article>
-      <aside class="situation"><p class="eyebrow">CURRENT OPERATION</p><h2>${esc(active?text(active.cyberKey):'Extraction')}</h2><p class="operator">OPERATIVE <b>${esc(s.operator)}</b></p><dl>${status.map(([label,value])=>`<div><dt>${label}</dt><dd>${esc(value)}</dd></div>`).join('')}</dl>${s.security.alarm?'<p class="alarm">Alarm active — your disguise will not protect you.</p>':''}</aside></section>
-      <section class="missions"><div class="section-heading"><div><p class="eyebrow">THE PLAN</p><h2>Mission progress</h2></div><span>${completed} / 4 phases complete</span></div><div class="phase-grid">${phases.map((phase,i)=>`<article class="phase ${phase.active?'active':''} ${phase.done?'complete':''}"><div class="phase-top"><span>0${i+1}</span><b>${phase.done?'COMPLETE':phase.active?'IN PROGRESS':'UP NEXT'}</b></div><h3>${esc(text(phase.cyberKey))}</h3><p>${esc(text(phase.labelKey))}</p><ul>${phase.objectives.map(o=>`<li class="${o.state}"><span class="check">${o.state==='done'?'✓':o.state==='hidden'?'?':'○'}</span><div>${esc(o.state==='hidden'?'Undiscovered entrance':text(o.labelKey))}${o.note?` <strong>${esc(o.note)}</strong>`:''}${o.state!=='hidden'?`<small>${esc(text(o.cyberKey))}</small>`:''}</div></li>`).join('')}</ul></article>`).join('')}</div>${!phases.length?'<p>Reload the game to enable the detailed mission feed.</p>':''}</section>`;
+    const names={recon:'Recon',foothold:'Access',lateral:'Vault',exfil:'Extract'};
+    const objectives=active?.objectives.filter(o=>o.state==='open')??[];
+    html=`${stale?'<div class="notice">Connection lost · Reopen the game to reconnect.</div>':''}
+      <ol class="progress" aria-label="Mission progress">${phases.map((phase,i)=>`<li class="${phase.active?'active':''} ${phase.done?'complete':''}" ${phase.active?'aria-current="step"':''}><span>${phase.done?'✓':`0${i+1}`}</span>${names[phase.id]}${phase.done?'<span class="sr-only"> complete</span>':''}</li>`).join('')}</ol>
+      <section class="briefing"><article class="next"><p class="eyebrow">NEXT MOVE</p><h2>${esc(title)}</h2><p class="control">${esc(control)}</p>${s.security.alarm?'<p class="alarm">Alarm active · Keep clear of guards.</p>':''}</article>
+      ${active?`<aside class="checklist"><div class="checklist-heading"><h2>This phase</h2><span>${active.objectives.filter(o=>o.state==='done').length} / ${active.objectives.length}</span></div><ul>${objectives.map(o=>`<li><span class="check" aria-hidden="true">○</span><span>${esc(text(o.labelKey))}</span>${o.note?`<strong>${esc(o.note)}</strong>`:''}</li>`).join('')}</ul>${!objectives.length?`<p class="empty">${active.objectives.some(o=>o.state==='hidden')?'Explore to discover an entrance.':'Objectives complete.'}</p>`:''}</aside>`:''}</section>`;
   }
   if(html!==last){display.innerHTML=html;last=html;}
 }
