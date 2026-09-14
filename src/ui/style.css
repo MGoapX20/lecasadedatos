@@ -952,13 +952,8 @@ html.cursor-visible select { cursor: pointer; }
 .t-motion { stroke:#ffe02b; stroke-width:2; opacity:.65; stroke-dasharray:12 13; stroke-dashoffset:var(--travel,0); transition:stroke-dashoffset 50ms linear; }
 .t-chevron { stroke:#fff0a0; stroke-width:3; stroke-linecap:round; stroke-linejoin:round; }
 
-/* Integrated world map: passive HUD, above the bottom prompt and away from missions. */
-#hud-minimap{position:absolute;left:var(--pad);bottom:clamp(48px,7.5vmin,90px);width:clamp(140px,28vmin,310px);padding:7px;background:rgba(10,10,13,.86);border:1px solid rgba(236,229,214,.24);border-top:2px solid var(--red);box-shadow:0 5px 22px #0007;pointer-events:none;z-index:2;contain:layout paint}
+/* A map-only HUD: large floor plan and essential navigation symbols. */
+#hud-minimap{position:absolute;left:var(--pad);bottom:clamp(48px,7.5vmin,90px);width:clamp(200px,40vmin,440px);max-width:calc(48vw - var(--pad));padding:2px;background:rgba(10,10,13,.8);border:1px solid rgba(236,229,214,.2);box-shadow:0 5px 22px #0007;pointer-events:none;z-index:2;contain:layout paint}
 #hud-minimap[hidden]{display:none}
 #hud-minimap canvas{display:block;width:100%;aspect-ratio:96/88}
-.hud-map-heading{display:flex;justify-content:space-between;align-items:center;padding:1px 4px 3px;font-family:var(--display);font-size:clamp(9px,1.2vmin,14px);letter-spacing:.1em;color:var(--paper)}
-.hud-map-north{font:700 10px var(--body);direction:ltr;color:#a4a8b0}
-.hud-map-legend{display:flex;justify-content:space-between;gap:8px;padding:2px 4px 0;font-size:clamp(8px,1vmin,12px);color:#b9bbc4}
-.hud-map-legend span:before{content:'';display:inline-block;width:5px;height:5px;margin-inline-end:5px;background:#f04452}
-.hud-map-legend .map-defense:before{background:#62aaff}
-@media(max-height:460px){#hud-minimap{width:clamp(112px,28vmin,150px);bottom:38px;padding:4px}.hud-map-legend{display:none}}
+@media(max-height:460px){#hud-minimap{width:40vmin;bottom:38px}}

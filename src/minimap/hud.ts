@@ -8,10 +8,10 @@ import { showHudMap } from './visibility';
 export function mountHudMinimap(flow: GameFlow, menuOpen: () => boolean) {
   const root=document.createElement('aside');
   root.id='hud-minimap';root.hidden=true;
-  root.innerHTML='<div class="hud-map-heading"><span class="hud-map-title"></span><span class="hud-map-north" aria-hidden="true">N ↑</span></div><canvas></canvas><div class="hud-map-legend"><span class="map-attack"></span><span class="map-defense"></span></div>';
+  root.innerHTML='<canvas></canvas>';
   document.getElementById('ui')!.append(root);
   const canvas=root.querySelector('canvas')!;
-  const draw=createMapRenderer(canvas);
+  const draw=createMapRenderer(canvas, { hud: true });
   let next=0,previousTick=-1,previousWorld=flow.world,previousLang='';
   const resize=new ResizeObserver(()=>{next=0;previousTick=-1;});resize.observe(canvas);
   window.addEventListener('pagehide',event=>{if(!event.persisted)resize.disconnect();});
@@ -24,9 +24,6 @@ export function mountHudMinimap(flow: GameFlow, menuOpen: () => boolean) {
       const he=language==='he';
       root.setAttribute('aria-label',he?'מפת הבסיס':'Base minimap');
       canvas.setAttribute('aria-label',he?'מפת הבסיס בזמן אמת':'Live top-down map of the base');
-      root.querySelector('.hud-map-title')!.textContent=he?'מפת הבסיס':'BASE MAP';
-      root.querySelector('.map-attack')!.textContent=he?'תוקפים':'Attackers';
-      root.querySelector('.map-defense')!.textContent=he?'מגינים':'Defenders';
       previousLang=language;
     }
     if(now<next)return;
