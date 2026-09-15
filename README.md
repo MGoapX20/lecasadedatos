@@ -280,9 +280,10 @@ why the whole AI can be tested headlessly in Node.
 
 ## Assets and the wordmark
 
-Fonts (Anton, Heebo) are vendored under `public/fonts`. Music goes in
-`public/audio` as `theme.m4a` and `bella_ciao.m4a`; if either is missing the game
-synthesises a loop instead and still runs.
+Fonts (Anton, Heebo) are vendored under `public/fonts`. Music lives at
+`public/audio/theme.m4a`; if it is missing the game synthesises a loop instead.
+The theme continues throughout the visit. The final GAP screen fades it up to
+the homepage volume without changing tracks or restarting playback.
 
 The title is built to the same formula as the show's own wordmark: one tight line
 of ultra-heavy condensed caps, with the middle word reversed out of a red block.
