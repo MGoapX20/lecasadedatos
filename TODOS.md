@@ -35,6 +35,8 @@
 	- Add banners to the vault's wall, when the player attacks it should have the Iranian flag, and when defending it should have Israel's flag.
 	- Break the task into subtasks, and initiate agents if possible.
 
+[ ] Make the guards' movement circular, instead of them teleporting back to the start of their route. (make them walk back the way they came, or in a circle when more appropriate).
+
 [ ] Add an irenian/arab agent to indicate the current action.
 
 [ ] In the defending mode/stage, make it such that when clicking a location the nearest guard (calculated by pathfinding to the location). 	Instead of needing to click on a specific guard.
@@ -45,11 +47,22 @@
 
 [ ] Make the AI agents attack all the different paths, but all should start from the same initial position.
 
+[ ] In the defending mode/stage, make it such that when clicking a location the nearest guard (calculated by pathfinding to the location). 	Instead of needing to click on a specific guard.
+ 
+[ ] Make player faster.
+ 
+[ ] Fix no ways in glitch.
+ 
+[ ] At the AI Swarm phase, the game ends too quickly, there should me a popup message for a couple of seconds indicating the swarm ended.
+ 
+[ ] The agent's camera shows the mask in the recording.
+
+[ ] Make everything bigger (especially the characters) - while maintaing the same large overview.
+
+[ ] In the first "recon" phase lets change the mission to Circle around the building... with a subtle green arrows on the actual floor indicating the route it should take.
+
 [?] Find a way to make the game a little bit easier than it is right now.
 
 [?] Improve the path finding to go around obstacles. ????
 
 [?] Make the truck go only to the top left stand, instead to all of them. ???
-
-[?] Make the guards' movement circular, instead of them teleporting back to the start of their route. (make them walk back the way they came, or in a circle when more appropriate).
-
