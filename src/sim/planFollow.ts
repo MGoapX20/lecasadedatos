@@ -1,5 +1,6 @@
 import type { Level } from '../level/loader';
 import type { Plan, PlanNodeKind } from '../planner/types';
+import { truckPoseAt } from './truck';
 
 export interface PlanSample {
   x: number;
@@ -79,11 +80,35 @@ export function samplePlan(level: Level, plan: Plan, qf: number, hintIdx = 1): P
     }
   } else if (cur.kind === 'portal') {
     out.hidden = true;
-    out.x = f < 0.5 ? ax : bx;
-    out.y = f < 0.5 ? ay : by;
+    const truck = level.json.delivery && level.portalsFrom.get(prev.cell)?.some(p => p.truckStop !== undefined && p.def.id === cur.ref);
+    if (truck) {
+      const pose = truckPoseAt(level.json.delivery!, level.json.rules.tickHz, (plan.startQ + qf) * level.json.rules.quantumTicks);
+      out.x = pose.x; out.y = pose.y; out.facing = pose.facing;
+    } else {
+      out.x = f < 0.5 ? ax : bx;
+      out.y = f < 0.5 ? ay : by;
+    }
   } else {
     out.x = ax;
     out.y = ay;
   }
   return out;
+}
+
+/** Route previews follow the service road during a ride, not a line through walls. */
+export function planPathPoints(level: Level, plan: Plan): { x: number; y: number }[] {
+  const points: { x: number; y: number }[] = [];
+  for (let i = 0; i < plan.nodes.length; i++) {
+    const node = plan.nodes[i], prev = plan.nodes[i - 1];
+    if (prev && node.kind === 'portal' && level.json.delivery
+      && level.portalsFrom.get(prev.cell)?.some(p => p.truckStop !== undefined && p.def.id === node.ref)) {
+      for (let q = prev.arriveQ; q < node.arriveQ; q++) {
+        const pose = truckPoseAt(level.json.delivery, level.json.rules.tickHz, (plan.startQ + q) * level.json.rules.quantumTicks);
+        if (points.at(-1)?.x !== pose.x || points.at(-1)?.y !== pose.y) points.push({ x: pose.x, y: pose.y });
+      }
+    }
+    const x = planCellCenterX(level, node.cell), y = planCellCenterY(level, node.cell);
+    if (points.at(-1)?.x !== x || points.at(-1)?.y !== y) points.push({ x, y });
+  }
+  return points;
 }

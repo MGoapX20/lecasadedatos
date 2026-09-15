@@ -3,23 +3,28 @@ import { Rng } from '../core/rng';
 import { cellOf, fineXYToWorldX, fineXYToWorldZ, worldToFine, type Level } from '../level/loader';
 import { placeKeycards } from '../level/keycard';
 import { PlannerClient } from '../planner/client';
-import { SWARM_DELAYS, enumerateRequests } from '../planner/options';
+import { enumerateRequests, enumerateSwarmCandidates } from '../planner/options';
 import { coarseSignature } from '../planner/diversity';
+import { selectSwarmPlans } from '../planner/coverage';
+import { planningSnapshot } from '../planner/snapshot';
 import type { Plan } from '../planner/types';
-import { orderGuardTo, withTemporaryPost, type PatrolProgram } from '../sim/patrol';
+import type { PatrolProgram } from '../sim/patrol';
 import { SimWorld, type Thief } from '../sim/world';
 import { truckIsOpen } from '../sim/truck';
-import type { Cue } from '../ui/overlay';
+import type { Cue, WayItem } from '../ui/overlay';
+import type { DefenseMarker } from '../ui/defense';
 import { GuidedWalkthrough, type GuideStep } from './walkthrough';
 import { MissionTracker } from './missions';
+import { entrancePressure, type EntranceAttack } from './entranceBoard';
 import type { AudioBus } from '../audio/audio';
 import type { InputManager } from '../input/input';
 import type { CameraDirector } from '../render/camera';
-import { GroundPicker } from '../render/picking';
+import { DoorPicker, GroundPicker } from '../render/picking';
 import type { Stage } from '../render/renderer';
 import { WorldView } from '../render/worldView';
 import { Vector3 } from 'three';
 import { guideArrowInView } from '../render/guideVisibility';
+import { GUARD_BADGE_HEIGHT } from '../render/readability';
 import { formatClock, onLangChange, t, toggleLang } from '../ui/i18n';
 import { wayColor } from '../render/palette';
 import { Overlay } from '../ui/overlay';
@@ -56,8 +61,6 @@ const ATTRACT_LINES = ['attract.line1', 'attract.line2', 'attract.line3'];
 const WAVE_A_RATE = 0.75;
 
 const MUSIC_THEME = '/audio/theme.m4a';
-const MUSIC_ANTHEM = '/audio/bella_ciao.m4a';
-const CLICK_RADIUS_M = 3.2;
 
 export interface FlowDeps {
   level: Level;
@@ -83,12 +86,17 @@ export class GameFlow {
   get displayState() {
     return { elapsedMs: this.stateMs, ways: this.ways, replanning: this.replanInFlight, replanCount: this.replanCount };
   }
+  get defenseDisplayState() {
+    return { revision: this.stageRevision, ended: this.swarmEnd?.reason ?? null,
+      plannedAgents: this.swarmPlans.length, planningReady: this.thinkReady };
+  }
   state: State = 'attract';
   readonly world: SimWorld;
   readonly session = new Session();
   private stateMs = 0;
   private idleMs = 0;
   private picker = new GroundPicker();
+  private doorPicker: DoorPicker;
   private rng = new Rng(Date.now() >>> 0);
   private attractLineIdx = 0;
   private attractTypeMs = 0;
@@ -97,6 +105,7 @@ export class GameFlow {
   private swarmPlans: Plan[] = [];
   private pendingSpawn: Plan[] = [];
   private waveBStarted = 0;
+  private swarmEnd: { reason: 'complete' | 'timeout'; elapsedMs: number; breaches: number; caught: number } | null = null;
   /** Time spent showing the wave A verdict, so the beat lands before the AI's turn. */
   private waveAResultMs = 0;
   /** No route could be planned for wave A: there is nobody to send. */
@@ -111,8 +120,10 @@ export class GameFlow {
   /** The distinct ways in, in reveal order: the thing the whole exhibit is about. */
   private ways: WayInfo[] = [];
   private wayOf = new Map<number, number>();
+  private blockedAttackers = new Set<number>();
+  private waysRefreshMs = 0;
 
-  /** The same way identities and order used by the defense HUD, including replans. */
+  /** Numbered route identities used by the live camera board, including replans. */
   get agentViewWays() {
     if (this.state === 'round2a') return [{ id: 0, name: 'Single attacker', agentIds: this.world.thieves.filter(t => t.kind === 'plan').map(t => t.id) }];
     if (this.state !== 'round2b') return [];
@@ -120,8 +131,11 @@ export class GameFlow {
       agentIds: this.world.thieves.filter(t => this.wayOf.get(t.id) === id).map(t => t.id) }));
   }
   private thinkDurationMs: number = TIMERS.aiThink;
+  private thinkReady = false;
+  private thinkReadyMs = 0;
+  private thinkFailed = false;
+  private thinkCountdown = 0;
   private banner: { text: string; until: number } | null = null;
-  private selectedGuard = -1;
   /** A short freeze on a catch, so the moment registers before the world moves on. */
   private hitStopMs = 0;
   private arrowVec = new Vector3();
@@ -139,8 +153,12 @@ export class GameFlow {
   /** Guard highlighted by the operator panel. */
   presenterGuard = -1;
   private replanningUntil = 0;
-  private hoverGuard = -1;
   private hoverDoor = -1;
+  private hoverUi = false;
+  private hoverAlarm = false;
+  private guardPreview: ReturnType<SimWorld['nearestGuardOrder']> = null;
+  private previewCell = -1;
+  private previewAt = -Infinity;
   private orderTarget: { guard: number; x: number; y: number } | null = null;
   private replanInFlight = false;
   private lastReplanTick = -999;
@@ -157,6 +175,7 @@ export class GameFlow {
 
   constructor(private readonly d: FlowDeps) {
     this.world = new SimWorld(d.level, 1234);
+    this.doorPicker = new DoorPicker(d.view.building, (index) => !!d.level.doors[index].lockableByChief);
     onLangChange(() => {
       this.d.overlay.applyI18n();
       this.refreshStaticText();
@@ -174,37 +193,48 @@ export class GameFlow {
       this.world.attemptCut();
     });
     d.overlay.alarmButton.addEventListener('click', () => {
+      if (this.paused || this.swarmEnd) return;
       if (this.state !== 'round2a' && this.state !== 'round2b') return;
       if (this.world.triggerAlarm('chief')) this.d.audio.play('alarm');
       else this.d.audio.play('deny');
     });
-    void this.preparePlans();
+    d.overlay.defense.onDoor = (index) => this.toggleChiefDoor(index);
+    void this.preparePlans().catch(error => console.error('[casa] attract planning failed', error));
   }
 
   // ------------------------------------------------------------- lifecycle
 
   private async preparePlans(): Promise<void> {
     await this.d.planner.whenReady();
+    if (this.state !== 'attract') return;
     const job = this.d.planner.plan({
       nowTick: 0,
       doorLocked: this.world.doorLocked,
       guardPrograms: this.world.guards.map((g) => g.program),
       alarmWindows: [],
-      requests: enumerateRequests(this.d.level, 60, 99, 1, SWARM_DELAYS),
+      requests: enumerateSwarmCandidates(this.d.level, 60, 99),
       budgetMs: 3000,
     });
     const { plans, cancelled } = await job.promise;
     if (cancelled) return;
-    this.attractPlans = plans;
+    this.attractPlans = selectSwarmPlans(this.d.level, plans, 60);
     if (this.state === 'attract') this.startAttractSwarm();
   }
 
   enter(next: State): void {
     this.stageRevision++;
+    this.replanInFlight = false;
     this.adminStartSwarm = false;
+    this.swarmEnd = null;
+    this.d.overlay.swarmResult(null);
     this.state = next;
     this.d.view.setBaseStage(next);
     this.d.view.setGuideTargets([]);
+    this.d.view.setReconRoute(null);
+    this.d.view.setDefensePreview(null);
+    this.guardPreview = null;
+    this.previewCell = -1;
+    this.previewAt = -Infinity;
     this.d.overlay.setEntranceIndicators([]);
     this.stateMs = 0;
     this.idleMs = 0;
@@ -247,6 +277,7 @@ export class GameFlow {
 
   private refreshStaticText(): void {
     this.d.overlay.setWanted(loadBoard());
+    this.refreshWays();
   }
 
   // --------------------------------------------------------------- attract
@@ -379,7 +410,6 @@ export class GameFlow {
     view.markKeycard(this.world);
     director.moveTo('follow', 1.2);
     this.missions.reset();
-    this.walkthrough.reset();
     this.guideStep = null;
     this.advisoryStep = null;
     this.d.overlay.resetMissions();
@@ -536,6 +566,12 @@ export class GameFlow {
   /** When the objective is off screen, an arrow at the edge says where to go. */
   private updateObjectiveArrow(): void {
     const { overlay, director, level, canvas } = this.d;
+    if (this.guideStep?.floorRoute) {
+      overlay.setObjectiveLabel(t(this.guideStep.labelKey));
+      overlay.setObjectiveArrow(null);
+      overlay.setEntranceIndicators([]);
+      return;
+    }
     const targets = this.guideStep?.targets;
     if (targets && (this.guideStep?.id === 'entry' || targets.length > 1)) {
       const points: {x:number;y:number;angleDeg:number}[] = [];
@@ -595,13 +631,6 @@ export class GameFlow {
     });
   }
 
-  /** Fine cell of each card, for the planner's copy of the level. */
-  private keycardCells(): Record<string, number> {
-    const out: Record<string, number> = {};
-    for (const k of this.d.level.json.keycards) out[k.id] = cellOf(this.d.level, k.cell);
-    return out;
-  }
-
   private resetWorldForPlay(): void {
     // A different desk every visit, so watching someone else play gives nothing away.
     placeKeycards(this.d.level, this.rng);
@@ -623,8 +652,6 @@ export class GameFlow {
     this.world.refreshOpacity();
     this.world.chief.locksLeft = this.d.level.json.rules.maxLocks;
     this.world.chief.alarmReadyAtTick = 0;
-    this.selectedGuard = -1;
-    this.hoverGuard = -1;
     this.hoverDoor = -1;
     this.orderTarget = null;
     this.d.view.clearOrder();
@@ -679,17 +706,13 @@ export class GameFlow {
       );
       if (p) {
         const cell = worldToFine(level, p.x, p.z);
-        if (cell >= 0 && level.walk[cell]) {
-          this.world.setPlayerRoute(cell);
-          this.d.audio.play('blip');
+        if (cell >= 0) {
+          const routed = this.world.setPlayerRoute(cell);
+          this.d.audio.play(routed ? 'blip' : 'deny');
         }
       }
     }
     director.lookNear(fineXYToWorldX(level, player.x), fineXYToWorldZ(level, player.y), 0.82);
-    this.updateObjectiveArrow();
-    // The board says what the phase is; the building shows where it is.
-    this.d.view.setPhaseMarks(level, this.missions.activeMarks);
-
     // Walking the perimeter is what puts the ways in on the board.
     for (const found of this.missions.update(this.world, level, player)) {
       this.showCue({
@@ -703,7 +726,10 @@ export class GameFlow {
 
     this.advisoryStep = this.walkthrough.update(this.world, level, this.missions);
     this.guideStep = this.guided ? this.advisoryStep : null;
+    // Discovered entrances keep their yellow markers while green arrows guide recon.
     this.d.view.setGuideTargets(this.guideStep?.targets ?? []);
+    this.d.view.setReconRoute(this.guideStep?.floorRoute ?? null);
+    this.d.view.setPhaseMarks(level, this.missions.activeMarks);
     this.updateObjectiveArrow();
 
     // Working a lock: presses go to the mini-game, not to the world.
@@ -734,7 +760,8 @@ export class GameFlow {
       timeMs: this.stateMs,
       caught: player.caughtCount,
       codename: this.session.codename,
-      goal: player.breached ? t('round1.goalExfil') : t('round1.goal'),
+      goal: this.advisoryStep?.id === 'circle' ? `${t('missions.circle')} · ${Math.round(this.missions.recon.fraction * 100)}%`
+        : player.breached ? t('round1.goalExfil') : t('round1.goal'),
       banner: this.activeBanner(),
       progress,
       missions: this.missions.phases,
@@ -791,6 +818,8 @@ export class GameFlow {
       prompt:
         pickGame || wireGame || drillGame
         ? ''
+        : this.guideStep?.floorRoute
+          ? t('guide.circleHint')
         : player.breached
           ? t('round1.exfilPrompt')
           : this.atSealedVault(player)
@@ -842,6 +871,7 @@ export class GameFlow {
     const { overlay, director, view } = this.d;
     overlay.show('hud2');
     this.resetWorldForPlay();
+    director.setOrbit(0);
     director.moveTo('gameplay', 1.0);
     view.clearHint();
     this.waveAResultMs = 0;
@@ -851,7 +881,6 @@ export class GameFlow {
     // Re-entering the round (presenter, skip) must not inherit the last verdict:
     // `settled` reads it, so a stale one ends the round before it starts.
     this.session.round2.waveA = 'pending';
-    this.showBanner(t('round2.waveA'), 3000);
     void this.spawnWaveA();
   }
 
@@ -917,11 +946,7 @@ export class GameFlow {
    * where he really is for a few seconds; the schedule resumes afterwards.
    */
   plannerPrograms(): PatrolProgram[] {
-    return this.world.guards.map((g) =>
-      g.state === 'patrol'
-        ? g.program
-        : withTemporaryPost(g.program, g.x, g.y, g.facing, this.world.tick, 70),
-    );
+    return planningSnapshot(this.world).guardPrograms;
   }
 
   /** Null means a newer job took the worker: stand down, do not act on this. */
@@ -929,16 +954,17 @@ export class GameFlow {
     requests: ReturnType<typeof enumerateRequests>,
   ): Promise<Plan[] | null> {
     const job = this.d.planner.plan({
-      nowTick: this.world.tick,
-      doorLocked: this.world.doorLocked,
-      guardPrograms: this.plannerPrograms(),
-      alarmWindows: this.world.alarmWindows,
-      keycardCells: this.keycardCells(),
+      ...planningSnapshot(this.world),
       requests,
       budgetMs: 3000,
     });
-    const { plans, cancelled } = await job.promise;
-    return cancelled ? null : plans;
+    try {
+      const { plans, cancelled } = await job.promise;
+      return cancelled ? null : plans;
+    } catch (error) {
+      console.error('[casa] attacker planning failed', error);
+      return [];
+    }
   }
 
   /**
@@ -951,6 +977,13 @@ export class GameFlow {
     const revision = this.stageRevision;
     const { overlay, director, view, level } = this.d;
     overlay.show('think');
+    this.thinkReady = false;
+    this.thinkReadyMs = 0;
+    this.thinkFailed = false;
+    this.thinkCountdown = 0;
+    overlay.swarmHandoff({ result: this.handoffResult(), progress: 0 });
+    overlay.swarmCountdown(null);
+    this.d.audio.play('escalate');
     this.swarmPlans = [];
     this.pendingSpawn = [];
     this.thinkRevealed = 0;
@@ -964,21 +997,33 @@ export class GameFlow {
     director.moveTo('gameplay', 1.2);
     this.ways = [];
     this.wayOf.clear();
-    overlay.setWays([], t('ways.title'));
+    overlay.setWays(null);
     this.session.round2.swarmSize = config.swarmSize;
-    overlay.think({ ways: 0, unit: t('think.ways'), clock: '' });
+    overlay.think({ ways: 0, unit: t('think.ways'), clock: '', note: t('think.note') });
 
-    let plans = await this.requestSwarmPlans();
-    if (revision !== this.stageRevision || this.state !== 'aiThink') return;
-    if (plans === null || !plans.length) {
-      // The one beat the whole exhibit is built around. If the worker was taken
-      // by a stale job, or came back with nothing, ask again before giving up.
-      console.warn('[casa] swarm planning came back empty, retrying once');
-      plans = await this.requestSwarmPlans();
+    let plans: Plan[] | null = null;
+    for (let attempt = 0; attempt < 2; attempt++) {
+      let failed = false;
+      try {
+        plans = await this.requestSwarmPlans(attempt);
+        failed = plans === null;
+      } catch (error) {
+        console.error('[casa] swarm planning failed', error);
+        failed = true;
+      }
       if (revision !== this.stageRevision || this.state !== 'aiThink') return;
+      this.thinkFailed = failed;
+      if (plans?.length) break;
+      overlay.think({ ways: 0, unit: t('think.ways'), clock: '', note: t('think.retry') });
     }
-    const found = plans ?? [];
+    // Coverage decides which routes get a visible agent, not worker arrival order.
+    const deadlineQ = TIMERS.round2BCap / 1000 * level.json.rules.tickHz / level.json.rules.quantumTicks;
+    const found = selectSwarmPlans(level, plans ?? [], config.swarmSize, deadlineQ);
+    this.session.ai.found = found.length;
+    this.session.ai.distinct = new Set(found.map(p => coarseSignature(p.signature))).size;
     this.swarmPlans = found;
+    this.thinkReady = true;
+    this.thinkReadyMs = Math.max(this.stateMs, TIMERS.aiHandoff);
 
     // Counting distinct ways saturates almost immediately if the routes are
     // revealed in planning order, so lead with one route per distinct way.
@@ -1003,7 +1048,7 @@ export class GameFlow {
     if (this.adminStartSwarm) {
       this.adminStartSwarm = false;
       if (found.length) this.enter('round2b');
-      else this.d.overlay.toast('No routes found. Reset this stage to retry.');
+      else this.enter(this.thinkFailed ? 'attract' : 'results');
     }
   }
 
@@ -1032,7 +1077,9 @@ export class GameFlow {
     for (let i = 1; i < p.nodes.length; i++) {
       if (p.nodes[i].kind === 'wait') waitQ += p.nodes[i].arriveQ - p.nodes[i - 1].arriveQ;
     }
-    if (waitQ >= 12) parts.push(t('way.waits'));
+    const usesTruck = p.actions.some(a => a.kind === 'portalStart' && a.id === 'p_truck');
+    if (usesTruck) parts.unshift(t(p.replanOnArrival ? 'way.truckEntry' : 'way.truckRide'));
+    else if (waitQ >= 12) parts.push(t('way.waits'));
     const how = parts.length ? parts.join(' · ') : t('way.none');
     const entry = this.d.level.json.entries.find((e) => e.id === entryId);
     return {
@@ -1047,8 +1094,25 @@ export class GameFlow {
     };
   }
 
-  private waysItems(n: number): { n: number; name: string; how: string; color: number; state: 'open' | 'breached' | 'held' }[] {
-    return this.ways.slice(0, n).map((w, i) => ({ n: i + 1, name: w.name, how: w.how, color: w.color, state: w.state }));
+  private waysItems(n: number): WayItem[] {
+    const visible = new Set(this.ways.slice(0, n).map(w => w.sig.split('|')[0]));
+    const planning = this.state === 'aiThink';
+    const attacks: EntranceAttack[] = planning
+      ? this.swarmPlans.map(p => ({ entryId: p.request.entryId, state: 'incoming' }))
+      : [
+        ...this.pendingSpawn.map(p => ({ entryId: p.request.entryId, state: 'incoming' as const })),
+        ...this.world.thieves.filter(a => a.kind === 'plan').map((a): EntranceAttack => {
+          const way = this.wayOf.get(a.id);
+          const entryId = way === undefined ? a.entryId : this.ways[way]?.sig.split('|')[0] ?? a.entryId;
+          return { entryId, state: a.breached ? 'breached' : a.caught || this.blockedAttackers.has(a.id) ? 'stopped'
+            : !a.active ? 'unfinished' : this.world.tick < a.planStartTick ? 'incoming' : 'active' };
+        }),
+      ];
+    // The authored entrance order stays fixed as threats and replans change.
+    const entries = this.d.level.json.entries.filter(e => visible.has(e.id));
+    return entrancePressure(entries.map(e => e.id), attacks, !!this.swarmEnd).map(row => ({
+      ...row, name: t(entries.find(e => e.id === row.entryId)!.nameKey), color: wayColor(row.entryId), planning,
+    }));
   }
 
   private refreshWays(): void {
@@ -1059,18 +1123,17 @@ export class GameFlow {
 
   /** Null when a newer job took the worker; the caller retries rather than
    * running the centrepiece of the exhibit with no routes. */
-  private async requestSwarmPlans(): Promise<Plan[] | null> {
+  private async requestSwarmPlans(attempt = 0): Promise<Plan[] | null> {
+    const revision = this.stageRevision;
+    const qt = this.d.level.json.rules.quantumTicks;
     const job = this.d.planner.plan({
-      nowTick: this.world.tick,
-      doorLocked: this.world.doorLocked,
-      guardPrograms: this.plannerPrograms(),
-      alarmWindows: this.world.alarmWindows,
-      keycardCells: this.keycardCells(),
-      requests: enumerateRequests(this.d.level, config.swarmSize, 777, 1, SWARM_DELAYS),
-      budgetMs: 4000,
+      ...planningSnapshot(this.world, Math.ceil(this.world.tick / qt) * qt),
+      requests: enumerateSwarmCandidates(this.d.level, attempt ? Math.max(120, config.swarmSize) : config.swarmSize,
+        attempt ? 1777 : 777),
+      budgetMs: attempt ? 8000 : 4000,
     });
     const { plans, stats, cancelled } = await job.promise;
-    if (cancelled) return null;
+    if (cancelled || revision !== this.stageRevision) return null;
     this.session.ai = {
       distinct: stats.distinct,
       found: stats.found,
@@ -1083,14 +1146,19 @@ export class GameFlow {
 
   private updateAiThink(): void {
     const { overlay, view } = this.d;
+    const handoff = this.stateMs < TIMERS.aiHandoff;
+    overlay.swarmHandoff(handoff ? { result: this.handoffResult(), progress: this.stateMs / TIMERS.aiHandoff } : null);
+    if (handoff) return;
     if (!this.ways.length) {
-      overlay.think({ ways: 0, unit: t('think.ways'), clock: '' });
+      overlay.think({ ways: 0, unit: t('think.ways'), clock: '',
+        ...(this.thinkReady ? { note: t(this.thinkFailed ? 'think.error' : 'think.none') } : {}) });
       return;
     }
     // One way at a time, each with its ribbon on the map and its row in the
     // list, so the number on screen is a list a person can read, not a total.
     const lead = 900;
-    const shown = this.stateMs < lead ? 0 : Math.min(this.ways.length, Math.floor((this.stateMs - lead) / 420) + 1);
+    const elapsed = this.stateMs - this.thinkReadyMs;
+    const shown = elapsed < lead ? 0 : Math.min(this.ways.length, Math.floor((elapsed - lead) / 420) + 1);
     if (shown !== this.thinkRevealed) {
       this.thinkRevealed = shown;
       view.ribbons.reveal(shown);
@@ -1104,24 +1172,36 @@ export class GameFlow {
       clock: all ? t('think.done', { t: formatClock(this.session.ai.planMs) }) : '',
       note: all ? t('think.more', { n: Math.max(0, this.session.ai.found - this.ways.length) }) : t('think.note'),
     });
+    const remaining = this.thinkDurationMs - elapsed;
+    const countdown = remaining > 0 && remaining <= 3000 ? Math.ceil(remaining / 1000) : 0;
+    overlay.swarmCountdown(countdown ? { seconds: countdown, agents: this.swarmPlans.length } : null);
+    if (countdown && countdown !== this.thinkCountdown) this.d.audio.play('blip');
+    this.thinkCountdown = countdown;
+  }
+
+  private handoffResult(): string {
+    const outcome = this.session.round2.waveA;
+    return t(`handoff.${outcome === 'caught' || outcome === 'held' || outcome === 'breached' ? outcome : 'neutral'}`);
   }
 
   private setupRound2B(): void {
     const { overlay, director, view, level } = this.d;
     overlay.show('hud2');
+    director.setOrbit(0);
     this.waveBStarted = 0;
     this.pendingSpawn = [...this.swarmPlans];
     this.world.clearThieves();
     view.resetAgents();
     view.setConesVisible(true);
     director.moveTo('gameplay', 1.2);
-    this.showBanner(t('round2.waveB'), 3000);
     this.d.audio.play('whoosh');
     // The ways stay on the map, dimmed, and the list stays up to be checked off.
     view.trails.clear();
     view.ribbons.reveal(this.ways.length);
     view.ribbons.setOpacity(0.3);
     this.wayOf.clear();
+    this.blockedAttackers.clear();
+    this.waysRefreshMs = 0;
     overlay.setWays(this.waysItems(this.ways.length), t('ways.title'));
     void level;
   }
@@ -1163,17 +1243,18 @@ export class GameFlow {
       0,
       ((this.world.chief.alarmReadyAtTick - this.world.tick) * 1000) / level.json.rules.tickHz,
     );
-    const live = this.world.thieves.filter((x) => x.active && !x.breached && !x.caught).length;
+    const live = this.world.thieves.filter((x) => wave === 'b' ? !swarmAgentFinished(x) : x.active && !x.breached && !x.caught).length;
 
     overlay.hud2({
       codename: this.session.codename,
       locks: this.world.chief.locksLeft,
       alarm: this.world.alarmActive
-        ? '!!'
+        ? t('defense.active')
         : alarmCooldownMs > 0
           ? formatClock(alarmCooldownMs)
           : 'X',
       alarmReady: alarmCooldownMs <= 0,
+      alarmActive: this.world.alarmActive,
       breaches: this.session.round2.breaches,
       caught: this.session.round2.caughtCount,
       thieves: live,
@@ -1186,6 +1267,11 @@ export class GameFlow {
     });
 
     if (wave === 'b') {
+      this.waysRefreshMs += dtMs;
+      if (this.waysRefreshMs >= 200) {
+        this.waysRefreshMs = 0;
+        this.refreshWays();
+      }
       if (this.timersEnabled) this.waveBStarted += dtMs;
       this.session.round2.heldMs = this.session.round2.firstBreachMs ?? this.waveBStarted;
     }
@@ -1194,9 +1280,11 @@ export class GameFlow {
 
   /** What the cursor is over, so the screen can say so before you commit. */
   private updateChiefHover(): void {
-    const { input, director, level, canvas } = this.d;
+    const { input, director, level, canvas, overlay, view } = this.d;
     const s = input.state;
-    this.hoverGuard = -1;
+    const hit = overlay.defense.hit(s.pointer.x, s.pointer.y);
+    this.hoverUi = hit.ui;
+    this.hoverAlarm = hit.alarm;
     this.hoverDoor = -1;
     const p = this.picker.pick(
       director.camera,
@@ -1205,112 +1293,135 @@ export class GameFlow {
       canvas.clientWidth,
       canvas.clientHeight,
     );
-    if (!p) return;
-
-    let bestDoor = -1;
-    let bestDoorD = CLICK_RADIUS_M;
-    level.doors.forEach((d, i) => {
-      if (!d.lockableByChief) return;
-      const cx = fineXYToWorldX(level, d.rect[0] + d.rect[2] / 2);
-      const cz = fineXYToWorldZ(level, d.rect[1] + d.rect[3] / 2);
-      const dist = Math.hypot(p.x - cx, p.z - cz);
-      if (dist < bestDoorD) {
-        bestDoorD = dist;
-        bestDoor = i;
-      }
-    });
-    let bestGuard = -1;
-    let bestGuardD = CLICK_RADIUS_M;
-    this.world.guards.forEach((g, i) => {
-      if (!g.present) return;
-      const dist = Math.hypot(p.x - fineXYToWorldX(level, g.x), p.z - fineXYToWorldZ(level, g.y));
-      if (dist < bestGuardD) {
-        bestGuardD = dist;
-        bestGuard = i;
-      }
-    });
-    if (bestGuard >= 0 && bestGuardD <= bestDoorD) this.hoverGuard = bestGuard;
-    else if (bestDoor >= 0) this.hoverDoor = bestDoor;
+    this.hoverDoor = hit.ui ? -1 : hit.door ?? this.doorPicker.pick(
+      director.camera, s.pointer.x, s.pointer.y, canvas.clientWidth, canvas.clientHeight,
+    );
+    const cell = p && !hit.ui && this.hoverDoor < 0 ? worldToFine(level, p.x, p.z) : -1;
+    const valid = cell >= 0 && !!level.walk[cell];
+    if (cell !== this.previewCell || !valid) {
+      this.guardPreview = null;
+      view.setDefensePreview(null);
+    }
+    // Pathfinding is capped at 10 Hz; a click always recomputes from live positions.
+    const now = performance.now();
+    if (valid && now - this.previewAt >= 100) {
+      this.previewCell = cell;
+      this.previewAt = now;
+      this.guardPreview = this.world.nearestGuardOrder(cell);
+      view.setDefensePreview(this.guardPreview?.route.points ?? null);
+    }
+    if (this.hoverDoor >= 0) {
+      const locked = this.world.doorLocked[this.hoverDoor] === 1;
+      const unavailable = !locked && this.world.chief.locksLeft <= 0;
+      overlay.defense.setCursor(unavailable ? 'blocked' : locked ? 'unlock' : 'lock', t(unavailable ? 'defense.noLocksShort' : locked ? 'defense.unlockCursor' : 'defense.lockCursor'));
+    } else if (hit.alarm) {
+      overlay.defense.setCursor(this.world.tick < this.world.chief.alarmReadyAtTick ? 'blocked' : 'alarm', t(this.world.alarmActive ? 'defense.active' : this.world.tick < this.world.chief.alarmReadyAtTick ? 'defense.recharging' : 'defense.alarm'));
+    } else if (hit.ui) {
+      overlay.defense.setCursor('guard', t('defense.command'));
+    } else {
+      const unreachable = valid && this.previewCell === cell && !this.guardPreview;
+      overlay.defense.setCursor(!valid || unreachable ? 'blocked' : 'guard', t(unreachable ? 'defense.noRoute' : valid ? 'defense.move' : 'defense.groundOnly'));
+    }
   }
 
   /** The line under the HUD, naming whatever the cursor is on. */
   private chiefPrompt(): string {
     const level = this.d.level;
-    const guardName = (i: number) => t(level.json.guards[i].nameKey);
-    if (this.hoverGuard >= 0) {
-      const key = this.hoverGuard === this.selectedGuard ? 'round2.hoverDrop' : 'round2.hoverGuard';
-      return t(key, { guard: guardName(this.hoverGuard) });
-    }
     if (this.hoverDoor >= 0) {
       const door = level.doors[this.hoverDoor];
       const name = t(door.nameKey ?? 'door.front');
       const locked = this.world.doorLocked[this.hoverDoor] === 1;
+      if (!locked && this.world.chief.locksLeft <= 0) return t('round2.noLocks');
+      if (locked && this.world.doorPickedOpen[this.hoverDoor]) return t('defense.brokenLock', { door: name });
       return t(locked ? 'round2.hoverUnlock' : 'round2.hoverLock', { door: name });
     }
-    if (this.selectedGuard >= 0) {
-      return t('round2.hoverSend', { guard: guardName(this.selectedGuard) });
-    }
+    if (this.hoverAlarm) return t(this.world.alarmActive ? 'defense.alarmActiveHint' : this.world.tick < this.world.chief.alarmReadyAtTick ? 'defense.cooldown' : 'defense.alarmHint');
+    if (this.guardPreview) return t('defense.sendGuard', { guard: t(level.json.guards[this.guardPreview.guard.index].nameKey) });
     return t('round2.idle');
+  }
+
+  private toggleChiefDoor(index: number): void {
+    if (this.paused || this.swarmEnd || (this.state !== 'round2a' && this.state !== 'round2b')) return;
+    const locked = this.world.doorLocked[index] === 1;
+    const ok = this.world.lockDoor(index, !locked, true);
+    this.d.audio.play(ok ? 'unlock' : 'deny');
+    this.d.overlay.toast(t(ok ? locked ? 'defense.doorUnlocked' : 'defense.doorLocked' : 'round2.noLocks', {
+      door: t(this.d.level.doors[index].nameKey ?? 'door.front'),
+    }));
+    if (ok) {
+      this.chiefActed = true;
+      void this.replanLiveThieves();
+    }
   }
 
   private handleChiefClick(): void {
     const { level } = this.d;
-
-    if (this.hoverGuard >= 0) {
-      this.selectedGuard = this.selectedGuard === this.hoverGuard ? -1 : this.hoverGuard;
-      if (this.selectedGuard < 0) this.d.view.clearOrder();
-      this.d.audio.play('blip');
+    if (this.hoverUi) {
+      if (this.hoverAlarm && this.d.input.state.pointer.virtual) this.d.overlay.alarmButton.click();
       return;
     }
 
     if (this.hoverDoor >= 0) {
-      const locked = this.world.doorLocked[this.hoverDoor] === 1;
-      const ok = this.world.lockDoor(this.hoverDoor, !locked, true);
-      this.d.audio.play(ok ? 'unlock' : 'deny');
-      if (!ok) this.d.overlay.toast(t('round2.noLocks'));
-      if (ok) {
-        this.chiefActed = true;
-        void this.replanLiveThieves();
-      }
+      this.toggleChiefDoor(this.hoverDoor);
       return;
     }
 
-    if (this.selectedGuard >= 0) {
-      const { input, director, canvas } = this.d;
-      const s = input.state;
-      const p = this.picker.pick(
-        director.camera,
-        s.pointer.x,
-        s.pointer.y,
-        canvas.clientWidth,
-        canvas.clientHeight,
-      );
-      const cell = p ? worldToFine(level, p.x, p.z) : -1;
-      if (cell >= 0 && level.walk[cell]) {
-        const g = this.world.guards[this.selectedGuard];
-        orderGuardTo(level, g.program, this.world.tick + 4, cell, 40, 200, { x: g.x, y: g.y });
-        g.state = 'return';
-        g.path = null;
-        const fx = (cell % level.w) + 0.5;
-        const fy = ((cell / level.w) | 0) + 0.5;
-        this.orderTarget = { guard: this.selectedGuard, x: fx, y: fy };
-        this.d.view.showOrder(fx, fy);
-        this.signals.emit('sim', { kind: 'guardOrdered', guard: g.id });
-        this.selectedGuard = -1;
-        this.chiefActed = true;
-        this.d.audio.play('confirm');
-        void this.replanLiveThieves();
-      } else {
-        this.d.audio.play('deny');
-        this.d.overlay.toast(t('round2.nothingThere'), 1200);
-      }
+    const { input, director, canvas } = this.d;
+    const s = input.state;
+    const p = this.picker.pick(
+      director.camera, s.pointer.x, s.pointer.y, canvas.clientWidth, canvas.clientHeight,
+    );
+    const cell = p ? worldToFine(level, p.x, p.z) : -1;
+    if (cell < 0 || !level.walk[cell]) {
+      this.d.audio.play('deny');
+      this.d.overlay.toast(t('round2.nothingThere'), 1200);
       return;
     }
+    const guard = this.world.orderNearestGuardTo(cell);
+    if (!guard) {
+      this.d.audio.play('deny');
+      this.d.overlay.toast(t('round2.unreachable'), 1400);
+      return;
+    }
+    const fx = (cell % level.w) + 0.5;
+    const fy = ((cell / level.w) | 0) + 0.5;
+    this.orderTarget = { guard: guard.index, x: fx, y: fy };
+    this.d.view.showOrder(fx, fy);
+    this.chiefActed = true;
+    this.d.audio.play('confirm');
+    this.d.overlay.toast(t('round2.guardSent', { guard: t(level.json.guards[guard.index].nameKey) }), 1400);
+    void this.replanLiveThieves();
+  }
 
-    // Nothing under the cursor and nobody picked up: say so rather than
-    // swallowing the click, which is what made this feel unresponsive.
-    this.d.audio.play('deny');
-    this.d.overlay.toast(t('round2.idle'), 1400);
+  /** Project badges after the camera moves so they stay attached while orbiting. */
+  private updateDefenseMarkers(): void {
+    const { level, director, canvas, overlay } = this.d;
+    const markers: DefenseMarker[] = [];
+    const project = (x: number, y: number, height: number) => {
+      const p = new Vector3(fineXYToWorldX(level, x), height, fineXYToWorldZ(level, y)).project(director.camera);
+      return { x: (p.x + 1) * canvas.clientWidth / 2, y: (1 - p.y) * canvas.clientHeight / 2,
+        visible: p.z > -1 && p.z < 1 && Math.abs(p.x) < .96 && Math.abs(p.y) < .96 };
+    };
+    this.world.guards.forEach((guard, i) => {
+      const ordered = this.orderTarget?.guard === i;
+      const name = t(level.json.guards[i].nameKey);
+      const point = project(guard.x, guard.y, GUARD_BADGE_HEIGHT);
+      markers.push({ id: guard.id, kind: 'guard', ...point, visible: point.visible && guard.present,
+        label: ordered ? t('round2.guardSent', { guard: name }) : name,
+        hot: this.guardPreview?.guard.index === i, ordered });
+    });
+    level.doors.forEach((door, i) => {
+      if (!door.lockableByChief) return;
+      const locked = this.world.doorLocked[i] === 1;
+      const broken = locked && !!this.world.doorPickedOpen[i];
+      const unavailable = !locked && this.world.chief.locksLeft <= 0;
+      const name = t(door.nameKey ?? 'door.front');
+      markers.push({ id: door.id, door: i, kind: locked && !broken ? 'lock' : 'unlock',
+        ...project(door.rect[0] + door.rect[2] / 2, door.rect[1] + door.rect[3] / 2, 2.8),
+        label: t(broken ? 'defense.brokenLock' : unavailable ? 'defense.noLocksDoor' : locked ? 'round2.hoverUnlock' : 'round2.hoverLock', { door: name }),
+        hot: this.hoverDoor === i, unavailable });
+    });
+    overlay.defense.setMarkers(markers);
   }
 
   /**
@@ -1324,6 +1435,7 @@ export class GameFlow {
     const patience = this.state === 'round2a' ? rules.tickHz * 3 : rules.tickHz * 9;
     let anyBlocked = false;
     for (const t of this.world.thieves) {
+      if (t.active && t.awaitingPlan) anyBlocked = true;
       if (!t.active || t.blockedByDoor < 0) continue;
       if (t.blockedTicks > patience) {
         this.world.abandonThief(t, 'blocked');
@@ -1349,7 +1461,9 @@ export class GameFlow {
     // The human thief does not replan. That is the whole contrast with the
     // swarm: move a guard and he walks into it, because his plan is already
     // out of date. Do the same to the AI and it simply picks another way.
-    if (this.state === 'round2a') return;
+    if (this.state !== 'round2b' && this.state !== 'presenter') return;
+    if (this.replanInFlight) return;
+    const revision = this.stageRevision;
     const live = this.world.thieves.filter((x) => x.active && !x.breached && !x.caught && !x.hidden);
     if (!live.length) return;
     this.replanningUntil = performance.now() + 1200;
@@ -1361,6 +1475,9 @@ export class GameFlow {
         seed: (base?.seed ?? i * 7919) >>> 0,
         entryId: base?.entryId ?? level.json.entries[0].id,
         startPlanCell: planCellOfThief(level, thief),
+        coverage: true,
+        heldKeys: [...thief.keys],
+        pickedDoors: [...thief.pickedDoors],
         keyStrategy: base?.keyStrategy ?? { kind: 'lockpick' as const },
         startDelayQ: 0,
         moveQuanta: base?.moveQuanta ?? 1,
@@ -1374,19 +1491,26 @@ export class GameFlow {
     });
     this.replanInFlight = true;
     const job = this.d.planner.plan({
-      nowTick: this.world.tick + 4,
-      doorLocked: this.world.doorLocked,
-      guardPrograms: this.plannerPrograms(),
-      alarmWindows: this.world.alarmWindows,
-      keycardCells: this.keycardCells(),
+      ...planningSnapshot(this.world, this.world.tick + 4),
       requests,
       budgetMs: 2500,
     });
-    const { plans, cancelled } = await job.promise;
+    const result = await job.promise.catch(error => {
+      console.error('[casa] live replan failed', error);
+      return null;
+    });
+    if (revision !== this.stageRevision || this.swarmEnd) return;
     this.replanInFlight = false;
-    if (cancelled) return;
-    this.replanCount++;
     this.lastReplanTick = this.world.tick;
+    if (!result) return;
+    const { plans: candidates, cancelled } = result;
+    if (cancelled) return;
+    const plans = candidates.filter(plan => {
+      const thief = live[plan.agentId];
+      return thief?.active && !thief.caught && !thief.breached && !thief.ridingTruck;
+    });
+    if (!plans.length) return;
+    this.replanCount++;
     for (const plan of plans) {
       const thief = live[plan.agentId];
       if (thief && thief.active && !thief.caught && !thief.breached) {
@@ -1420,6 +1544,28 @@ export class GameFlow {
   }
 
   // --------------------------------------------------------------- results
+
+  private finishSwarm(reason: 'complete' | 'timeout'): void {
+    this.swarmEnd = { reason, elapsedMs: 0,
+      breaches: this.world.thieves.filter(thief => thief.breached).length,
+      caught: this.world.thieves.filter(thief => thief.caught).length };
+    this.refreshWays();
+    this.idleMs = 0;
+    this.replanInFlight = false;
+    this.d.view.setDefensePreview(null);
+    this.d.overlay.setCursor(0, 0, false);
+    this.d.audio.setAlarm(false);
+    this.lastAlarmState = false;
+    this.d.audio.play('confirm');
+    this.renderSwarmResult();
+  }
+
+  private renderSwarmResult(): void {
+    const end = this.swarmEnd;
+    if (!end) return;
+    this.d.overlay.swarmResult({ reason: t(`swarmEnd.${end.reason}`), breaches: end.breaches,
+      caught: end.caught, progress: end.elapsedMs / TIMERS.round2BResult });
+  }
 
   private setupResults(): void {
     const { overlay, director, view, level } = this.d;
@@ -1473,8 +1619,8 @@ export class GameFlow {
       held: t('results.held', { t: formatClock(r2.heldMs) }) + ' · ' + t('results.breaches', { n: r2.breaches }),
       lines,
     });
-    // Bella Ciao lands on the comparison: the heist worked, and not for you.
-    this.d.audio.requestMusic(MUSIC_ANTHEM);
+    // Keep the theme at its current position and lift it to the homepage level.
+    this.d.audio.requestMusic(MUSIC_THEME, config.musicVolume * 0.75);
   }
 
   // ------------------------------------------------------------- presenter
@@ -1506,7 +1652,9 @@ export class GameFlow {
   }
 
   tickSim(): void {
-    if (this.paused || this.hitStopMs > 0) return;
+    // The routes are timed against this exact scene. Advancing during the
+    // reveal started agents halfway through stale plans, often behind locks.
+    if (this.paused || this.hitStopMs > 0 || this.state === 'aiThink' || this.swarmEnd) return;
     this.world.step();
     for (const e of this.world.drainEvents()) {
       this.signals.emit('sim', e);
@@ -1553,6 +1701,7 @@ export class GameFlow {
           this.d.audio.play('confirm');
           break;
         case 'thiefDone': {
+          if (e.reason === 'blocked' && this.state === 'round2b') this.blockedAttackers.add(e.thief);
           if (e.reason === 'blocked' && this.state === 'round2a') {
             this.session.round2.waveA = 'held';
           }
@@ -1598,7 +1747,7 @@ export class GameFlow {
           break;
         case 'truckLeave':
           this.d.audio.play(e.inside ? 'confirm' : 'blip');
-          if (e.inside) this.showBanner(t('round1.truckArrived'), 2200);
+          if (e.inside && e.thief === this.world.player?.id) this.showBanner(t('round1.truckArrived'), 2200);
           break;
         case 'lockpickStart':
           this.d.audio.play('lockpick');
@@ -1659,6 +1808,11 @@ export class GameFlow {
 
   /** Jump straight to whatever comes next; used by the menu and the presenter. */
   skipStage(): void {
+    if (this.state === 'aiThink') {
+      if (!this.thinkReady) { this.adminStartSwarm = true; return; }
+      this.enter(this.swarmPlans.length ? 'round2b' : this.thinkFailed ? 'attract' : 'results');
+      return;
+    }
     const order: State[] = [
       'attract', 'brief1', 'round1', 'r1result', 'brief2', 'round2a', 'aiThink', 'round2b', 'results',
     ];
@@ -1673,10 +1827,6 @@ export class GameFlow {
   /** Operator actions use the same setup paths as ordinary play. */
   adminAction(action: 'skip' | 'resetStage' | 'restart' | 'startRound1'): void {
     this.adminAssisted = true;
-    if (action === 'skip' && this.state === 'aiThink' && !this.swarmPlans.length) {
-      this.adminStartSwarm = true;
-      return;
-    }
     if (action === 'skip') { this.skipStage(); return; }
     this.d.planner.cancel();
     this.hitStopMs = 0;
@@ -1722,22 +1872,24 @@ export class GameFlow {
 
   update(dtMs: number): void {
     const { input, overlay, view, director } = this.d;
+    if (this.state === 'aiThink') overlay.setThinkPaused(this.paused || !this.timersEnabled);
     if (this.paused) {
       // Keep the scene alive behind the menu, but freeze the visit itself.
       overlay.setCursor(input.state.pointer.x, input.state.pointer.y, false);
+      view.setDefensePreview(null);
       view.sync(this.world, 0, { selectedGuard: -1, showCones: this.state !== 'attract' });
       director.update(dtMs / 1000);
       return;
     }
     this.hitStopMs = Math.max(0, this.hitStopMs - dtMs);
-    if (this.timersEnabled) this.stateMs += dtMs;
+    if (this.timersEnabled && !this.swarmEnd) this.stateMs += dtMs;
     this.idleMs = this.timersEnabled && input.idle ? this.idleMs + dtMs : 0;
 
     const s = input.state;
     overlay.setCursor(
       s.pointer.x,
       s.pointer.y,
-      this.state === 'round1' || this.state === 'round2a' || this.state === 'round2b',
+      !this.swarmEnd && (this.state === 'round1' || this.state === 'round2a' || this.state === 'round2b'),
     );
 
     switch (this.state) {
@@ -1790,8 +1942,11 @@ export class GameFlow {
         break;
       case 'aiThink':
         this.updateAiThink();
-        if (this.stateMs > this.thinkDurationMs && this.swarmPlans.length) this.enter('round2b');
-        else if (this.stateMs > TIMERS.aiThink + 6000) this.enter('round2b');
+        if (this.thinkReady) {
+          const elapsed = this.stateMs - this.thinkReadyMs;
+          if (this.swarmPlans.length && elapsed > this.thinkDurationMs) this.enter('round2b');
+          else if (!this.swarmPlans.length && elapsed > 3500) this.enter(this.thinkFailed ? 'attract' : 'results');
+        }
         break;
       case 'round2a': {
         this.updateRound2(dtMs, 'a');
@@ -1838,13 +1993,19 @@ export class GameFlow {
         break;
       }
       case 'round2b': {
+        if (this.swarmEnd) {
+          if (this.timersEnabled) this.swarmEnd.elapsedMs += dtMs;
+          this.renderSwarmResult();
+          if (this.swarmEnd.elapsedMs >= TIMERS.round2BResult) this.enter('results');
+          break;
+        }
         this.updateRound2(dtMs, 'b');
         const allDone =
           this.swarmPlans.length > 0 &&
           !this.pendingSpawn.length &&
           this.world.thieves.length > 0 &&
-          this.world.thieves.every((x) => !x.active || x.caught || x.breached);
-        if (this.stateMs > TIMERS.round2BCap || allDone) this.enter('results');
+          this.world.thieves.every(swarmAgentFinished);
+        if (allDone || this.stateMs >= TIMERS.round2BCap) this.finishSwarm(allDone ? 'complete' : 'timeout');
         break;
       }
       case 'results':
@@ -1857,29 +2018,37 @@ export class GameFlow {
     }
 
     // Idle watchdog: never leave a half-played session on the screen.
-    const idleLimit = this.state === 'results' ? TIMERS.idleResults : TIMERS.idleGameplay;
-    if (this.state !== 'attract' && this.state !== 'presenter' && this.idleMs > idleLimit) {
+    // Watching the longer swarm is a valid turn; its own cap still ends it.
+    const idleLimit = this.state === 'results' ? TIMERS.idleResults
+      : this.state === 'round2b' ? TIMERS.round2BCap + TIMERS.round2BResult : TIMERS.idleGameplay;
+    if (!this.swarmEnd && this.state !== 'attract' && this.state !== 'presenter' && this.idleMs > idleLimit) {
       this.enter('attract');
     }
 
-    const chiefRound = this.state === 'round2a' || this.state === 'round2b';
-    view.sync(this.world, dtMs / 1000, {
+    const chiefRound = !this.swarmEnd && (this.state === 'round2a' || this.state === 'round2b');
+    view.sync(this.world, this.swarmEnd ? 0 : dtMs / 1000, {
       interactive: chiefRound,
-      hoverGuard: chiefRound ? this.hoverGuard : -1,
+      hoverGuard: chiefRound ? this.guardPreview?.guard.index ?? -1 : -1,
       hoverDoor: chiefRound ? this.hoverDoor : -1,
       selectedGuard:
         this.state === 'presenter'
           ? this.presenterGuard
           : this.state === 'round2a' || this.state === 'round2b'
-            ? this.selectedGuard
+            ? this.orderTarget?.guard ?? -1
             : -1,
       showCones: this.state !== 'attract' && this.state !== 'results',
     });
     director.update(dtMs / 1000);
+    if (chiefRound) this.updateDefenseMarkers();
     void saveConfig;
     void TICK_MS;
     void cellOf;
   }
+}
+
+/** A vault breach can still have a visible walk out to the van ahead of it. */
+function swarmAgentFinished(thief: Thief): boolean {
+  return !thief.active || thief.caught || (thief.breached && thief.exfilIdx < 0);
 }
 
 function planCellOfThief(level: Level, thief: Thief): number {

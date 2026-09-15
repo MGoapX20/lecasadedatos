@@ -2,6 +2,7 @@ import { MinHeap } from '../core/heap';
 import type { Level, RuntimePortal } from '../level/loader';
 import { buildIntervals, intervalFrom, type SafeIntervals } from './intervals';
 import type { PlanNode } from './types';
+import type { TruckWindow } from './truck';
 
 const VIA_MOVE = 0;
 const VIA_LOCKPICK = 1;
@@ -122,6 +123,7 @@ export interface SearchOpts {
   blocked: Uint8Array | null;
   maxExpansions: number;
   heuristicWeight?: number;
+  truckWindows?: Map<number, TruckWindow[]>;
 }
 
 export interface SearchResult {
@@ -268,6 +270,15 @@ export function search(ctx: SearchCtx, o: SearchOpts): SearchResult | null {
         const a = iv.offset[p.toPlan];
         const b = iv.offset[p.toPlan + 1];
         for (let j = a; j < b; j++) {
+          if (p.truckStop !== undefined) {
+            for (const ride of o.truckWindows?.get(p.truckStop) ?? []) {
+              const depart = Math.max(t, ride.boardFrom);
+              const arrive = Math.max(ride.exitFrom, iv.lo[j]);
+              if (depart > hiC || depart > ride.boardUntil || arrive > ride.exitUntil || arrive > iv.hi[j]) continue;
+              relax(j, arrive, depart, VIA_PORTAL, pi);
+            }
+            continue;
+          }
           // Nobody can see you inside a vent, so only the two mouths must be safe.
           const depMin = Math.max(t, iv.lo[j] - p.quanta);
           const depMax = Math.min(hiC, iv.hi[j] - p.quanta);

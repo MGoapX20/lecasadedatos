@@ -1,6 +1,7 @@
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import { GameFlow } from '../src/game/flow';
 import { MissionTracker } from '../src/game/missions';
+import { reconRoute } from '../src/game/recon';
 import { Session } from '../src/game/session';
 import { Emitter } from '../src/core/events';
 import { SimWorld } from '../src/sim/world';
@@ -17,6 +18,7 @@ import {
   channelName,
   type EntryId,
   type GameState,
+  type StandbySnapshot,
   type Snapshot,
 } from '../src/companion/protocol';
 import { targetDeck, TARGETS } from '../src/companion/targets';
@@ -59,6 +61,9 @@ function fixture() {
     missions.note(event);
     project.note(flow, event);
   };
+  const circle = () => {
+    for (const cell of reconRoute(level).cells) stand(cell % level.w, Math.floor(cell / level.w));
+  };
   const capture = () => {
     const snapshot = project.capture(flow, Date.now(), 'en');
     if (snapshot.state !== 'round1')
@@ -75,6 +80,7 @@ function fixture() {
     project,
     level,
     stand,
+    circle,
     note,
     capture,
   };
@@ -84,10 +90,8 @@ describe('the companion follows the existing mission board', () => {
   it('shows supply chain at the loading-bay gate and moving truck, not the planner shop', () => {
     const f = fixture();
     f.stand(f.world.truck.x, f.world.truck.y);
-    for (const id of ['vent', 'sewer', 'front', 'side']) {
-      const entry = f.level.json.entries.find(e => e.id === id)!;
-      f.stand(...entry.spawn);
-    }
+    f.circle();
+    f.stand(...f.level.json.entries.find(e => e.id === 'side')!.spawn);
     expect(sceneId(f.capture())).toBe('access-side');
     const gate = f.level.doors.find(d => d.id === 'd_dock_outer')!;
     const [x, y, width] = gate.rect;
@@ -113,10 +117,8 @@ describe('the companion follows the existing mission board', () => {
         ).length,
     ).toBeGreaterThanOrEqual(3);
     f.stand(f.world.truck.x, f.world.truck.y);
-    for (const id of ['vent', 'sewer', 'front', 'side']) {
-      const e = f.level.json.entries.find((e) => e.id === id)!;
-      f.stand(...e.spawn);
-    }
+    f.circle();
+    f.stand(...f.level.json.entries.find(e => e.id === 'side')!.spawn);
     expect(f.capture().phase).toBe('foothold');
     expect(sceneId(f.capture())).toBe('access-side');
     f.note({ kind: 'portalExit', thief: f.player.id, portal: 'p_sewer' });
@@ -310,17 +312,24 @@ describe('pairing and reconnects', () => {
       f.flow.state = 'round2a';
       mounted.update(now + 1);
       await vi.waitFor(() => expect(packets.at(-1)?.state).toBe('round2a'));
-      expect(packets.at(-1)).not.toHaveProperty('events');
+      expect(packets.at(-1)).toHaveProperty('defense');
+      const defenseSeq = packets.at(-1)!.seq;
+      mounted.update(now + 201);
+      await vi.waitFor(() => expect(packets.at(-1)!.seq).toBeGreaterThan(defenseSeq));
+      expect(packets.at(-1)?.state).toBe('round2a');
+      f.flow.state = 'r1result';
+      mounted.update(now + 202);
+      await vi.waitFor(() => expect(packets.at(-1)?.state).toBe('r1result'));
       const captureSpy = vi.spyOn(SnapshotProjector.prototype, 'capture');
       try {
-        for (let i = 2; i < 1000; i += 16) mounted.update(now + i);
+        for (let i = 203; i < 1200; i += 16) mounted.update(now + i);
         expect(captureSpy).not.toHaveBeenCalled();
-        mounted.update(now + 1001);
+        mounted.update(now + 1202);
         expect(captureSpy).toHaveBeenCalledOnce();
         // A new visitor starts immediately, even inside the idle interval.
         f.session.reset('Berlin');
         f.flow.state = 'round1';
-        mounted.update(now + 1002);
+        mounted.update(now + 1203);
         await vi.waitFor(() => expect(packets.at(-1)?.state).toBe('round1'));
         expect(packets.at(-1)?.operator).toBe('Berlin');
         expect(packets.at(-1)?.run).not.toBe(s.run);
@@ -369,17 +378,13 @@ describe('different phases have different evidence surfaces', () => {
     expect(new Set(TARGETS.map((t) => t.style)).size).toBe(TARGETS.length);
   });
 
-  it('renders every thief phase and entrance, and only standby in all other game states', () => {
+  it('renders every thief phase and entrance, and standby in idle game states', () => {
     const f = fixture(),
       base = f.capture();
-    const states: Exclude<GameState, 'round1'>[] = [
+    const states: StandbySnapshot['state'][] = [
       'attract',
       'brief1',
       'r1result',
-      'brief2',
-      'round2a',
-      'aiThink',
-      'round2b',
       'results',
       'presenter',
     ];
@@ -420,7 +425,7 @@ describe('different phases have different evidence surfaces', () => {
     }
     expect(entryScenes.size).toBe(5);
     const recon = renderSnapshot(base);
-    expect(recon).toContain('SURFACE / DISCOVERY');
+    expect(recon).toContain('Endpoints');
     expect(recon).not.toContain('KNOWN VULNERABILITY');
   });
 
@@ -449,10 +454,6 @@ describe('different phases have different evidence surfaces', () => {
     expect(sceneId(inbox.latest!)).toBe('recon');
     for (const state of [
       'r1result',
-      'brief2',
-      'round2a',
-      'aiThink',
-      'round2b',
       'results',
       'presenter',
       'attract',
@@ -469,7 +470,7 @@ describe('different phases have different evidence surfaces', () => {
     expect(frameKey(restarted)).not.toBe(frameKey(live));
   });
 
-  it('does not inspect the simulation or planner, or record events, outside the thief round', () => {
+  it('does not inspect the simulation or planner, or record events, outside live gameplay', () => {
     const f = fixture();
     f.note({ kind: 'alarm', source: 'chief', x: 0, y: 0 });
     const idleFlow = { ...f.flow };
@@ -484,10 +485,6 @@ describe('different phases have different evidence surfaces', () => {
       'attract',
       'brief1',
       'r1result',
-      'brief2',
-      'round2a',
-      'aiThink',
-      'round2b',
       'results',
       'presenter',
     ] as const) {

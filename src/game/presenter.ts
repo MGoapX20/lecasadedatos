@@ -2,11 +2,14 @@ import { config, saveConfig, type Quality } from '../config';
 import { fineXYToWorldX, fineXYToWorldZ, worldToFine, type Level } from '../level/loader';
 import { clearOverride, loadOverride, saveOverride, type LevelOverride } from '../level/overrides';
 import { PlannerClient } from '../planner/client';
-import { SWARM_DELAYS, enumerateRequests } from '../planner/options';
+import { enumerateSwarmCandidates } from '../planner/options';
+import { selectSwarmPlans } from '../planner/coverage';
+import { coarseSignature } from '../planner/diversity';
+import { planningSnapshot } from '../planner/snapshot';
 import { orderGuardTo } from '../sim/patrol';
 import type { SimWorld } from '../sim/world';
 import type { CameraDirector } from '../render/camera';
-import { GroundPicker } from '../render/picking';
+import { DoorPicker, GroundPicker } from '../render/picking';
 import type { Stage } from '../render/renderer';
 import type { WorldView } from '../render/worldView';
 import { t } from '../ui/i18n';
@@ -22,8 +25,8 @@ interface Deps {
   director: CameraDirector;
 }
 
-/** How close a click must land, in metres, to count as hitting a thing. */
-const CLICK_RADIUS_M = 3.2;
+/** Generous selection applies only to guards; doors use their rendered surface. */
+const GUARD_CLICK_RADIUS_M = 3.2;
 
 /**
  * Apply a building saved from the panel. Without this, "save as default" would
@@ -49,8 +52,7 @@ export function applySavedBuilding(level: Level, world: SimWorld): boolean {
 /**
  * The operator panel. Its real job is answering the only question a sceptic
  * ever asks at a fair: change the building, and watch the AI plan around it.
- * It uses the same click grammar as the defending round, so whoever is running
- * the stand only has to learn one thing.
+ * The operator can reposition a specific guard while demonstrating defenses.
  */
 export function mountPresenter(flow: GameFlow, d: Deps): void {
   const panel = document.getElementById('scr-presenter')!;
@@ -59,6 +61,7 @@ export function mountPresenter(flow: GameFlow, d: Deps): void {
   const sliders = document.getElementById('pres-sliders')!;
   const stats = document.getElementById('pres-stats')!;
   const picker = new GroundPicker();
+  const doorPicker = new DoorPicker(d.view.building, (index) => !!d.level.doors[index].lockableByChief);
   const canvas = document.getElementById('stage') as HTMLCanvasElement;
   let planning = false;
 
@@ -143,20 +146,15 @@ export function mountPresenter(flow: GameFlow, d: Deps): void {
     const world = flow.world;
     if (play) clearAgents();
     const job = d.planner.plan({
-      nowTick: world.tick,
-      doorLocked: world.doorLocked,
-      guardPrograms: flow.plannerPrograms(),
-      alarmWindows: world.alarmWindows,
-      keycardCells: Object.fromEntries(
-        d.level.json.keycards.map((k) => [k.id, k.cell[1] * d.level.w + k.cell[0]]),
-      ),
-      requests: enumerateRequests(d.level, config.swarmSize, 4242, 1, SWARM_DELAYS),
+      ...planningSnapshot(world),
+      requests: enumerateSwarmCandidates(d.level, config.swarmSize, 4242),
       budgetMs: 5000,
       onProgress: (_done, _total, found, distinct) => {
         setStats(t('presenter.planning', { found, distinct }));
       },
     });
-    const { plans, stats: s } = await job.promise;
+    const { plans: candidates, stats: s } = await job.promise;
+    const plans = selectSwarmPlans(d.level, candidates, config.swarmSize);
     setBusy(false);
     if (flow.state !== 'presenter') return;
 
@@ -168,8 +166,8 @@ export function mountPresenter(flow: GameFlow, d: Deps): void {
     }
     setStats(
       t('presenter.stats', {
-        distinct: s.distinct,
-        found: s.found,
+        distinct: new Set(plans.map(p => coarseSignature(p.signature))).size,
+        found: plans.length,
         searches: s.searches,
         ms: s.wallMs,
       }),
@@ -226,7 +224,7 @@ export function mountPresenter(flow: GameFlow, d: Deps): void {
     URL.revokeObjectURL(a.href);
   }
 
-  // One click grammar, the same one the defending round uses.
+  // Presenter mode lets the operator choose a specific guard before its destination.
   canvas.addEventListener('pointerdown', (ev) => {
     if (flow.state !== 'presenter') return;
     const rect = canvas.getBoundingClientRect();
@@ -241,21 +239,21 @@ export function mountPresenter(flow: GameFlow, d: Deps): void {
     const world = flow.world;
     const level = d.level;
 
-    let bestDoor = -1;
-    let bestDoorD = CLICK_RADIUS_M;
-    level.doors.forEach((door, i) => {
-      if (!door.lockableByChief) return;
-      const cx = fineXYToWorldX(level, door.rect[0] + door.rect[2] / 2);
-      const cz = fineXYToWorldZ(level, door.rect[1] + door.rect[3] / 2);
-      const dist = Math.hypot(p.x - cx, p.z - cz);
-      if (dist < bestDoorD) {
-        bestDoorD = dist;
-        bestDoor = i;
-      }
-    });
+    const bestDoor = doorPicker.pick(
+      d.director.camera, ev.clientX - rect.left, ev.clientY - rect.top,
+      canvas.clientWidth, canvas.clientHeight,
+    );
+
+    if (bestDoor >= 0) {
+      const nowLocked = world.doorLocked[bestDoor] !== 1;
+      world.lockDoor(bestDoor, nowLocked, false);
+      const name = t(level.doors[bestDoor].nameKey ?? 'door.front');
+      d.overlay.toast(t(nowLocked ? 'presenter.doorNowLocked' : 'presenter.doorNowOpen', { door: name }));
+      return;
+    }
 
     let bestGuard = -1;
-    let bestGuardD = CLICK_RADIUS_M;
+    let bestGuardD = GUARD_CLICK_RADIUS_M;
     world.guards.forEach((g, i) => {
       if (!g.present) return;
       const dist = Math.hypot(p.x - fineXYToWorldX(level, g.x), p.z - fineXYToWorldZ(level, g.y));
@@ -265,19 +263,11 @@ export function mountPresenter(flow: GameFlow, d: Deps): void {
       }
     });
 
-    if (bestGuard >= 0 && bestGuardD <= bestDoorD) {
+    if (bestGuard >= 0) {
       flow.presenterGuard = flow.presenterGuard === bestGuard ? -1 : bestGuard;
       if (flow.presenterGuard >= 0) {
         d.overlay.toast(t('presenter.guardSelected', { guard: guardName(bestGuard) }));
       }
-      return;
-    }
-
-    if (bestDoor >= 0) {
-      const nowLocked = world.doorLocked[bestDoor] !== 1;
-      world.lockDoor(bestDoor, nowLocked, false);
-      const name = t(level.doors[bestDoor].nameKey ?? 'door.front');
-      d.overlay.toast(t(nowLocked ? 'presenter.doorNowLocked' : 'presenter.doorNowOpen', { door: name }));
       return;
     }
 

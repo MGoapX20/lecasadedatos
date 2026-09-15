@@ -1,17 +1,17 @@
 import {
   PROTOCOL,
+  isLiveStage,
   DISCOVERY,
   SnapshotInbox,
   channelName,
   type SourceInfo,
 } from './protocol';
-import { esc, frameKey, renderSnapshot, sceneId } from './scenes';
+import { esc, frameKey, renderSnapshot } from './scenes';
 import { reconcile } from './dom';
-import { fitBoard } from './fit';
+import './siem.css';
 
 const root = document.getElementById('companion')!;
 const display = document.getElementById('display')!;
-const stopFitting = fitBoard(document.getElementById('viewport')!, display);
 const connection = document.getElementById('connection')!;
 const notice = document.getElementById('connection-notice')!;
 const fullscreen = document.getElementById('fullscreen')!;
@@ -56,25 +56,21 @@ function render(): void {
   }
   const s = inbox?.latest;
   const stale = !inbox || inbox.stale(performance.now()) || offline;
-  const active = s?.state === 'round1';
+  const active = !!s && isLiveStage(s.state);
+  const defense = s && 'defense' in s;
   if (s && frameKey(s) !== drawnFrame) {
     reconcile(display, renderSnapshot(s));
     drawnFrame = frameKey(s);
     document.documentElement.lang = s.language;
-    document.getElementById('footer-phase')!.textContent = active
-      ? `${s.operator.toUpperCase()} / ${sceneId(s).replaceAll('-', ' ').toUpperCase()}`
-      : s.language === 'he'
-        ? 'סבב הגנב / ממתינים'
-        : 'THIEF ROUND / STANDBY';
+    document.getElementById('board-mode')!.textContent = defense ? (s.language === 'he' ? 'הגנה בזמן אמת' : 'DEFENSE LIVE') : 'RED TEAM';
+    document.title = defense ? 'Defense Live — Security Operations' : 'Red Team Live — La Casa de Uranio';
     document.getElementById('simulation-label')!.textContent =
-      s.language === 'he'
-        ? 'יעד בדיוני · אירועי משחק בזמן אמת'
-        : 'FICTIONAL TARGET · LIVE GAME EVENTS';
+      s.language === 'he' ? 'סימולציה' : 'SIMULATION';
     fullscreen.querySelector('span')!.textContent =
       s.language === 'he' ? 'מסך מלא' : 'Fullscreen';
   }
   root.dataset.stopped = String(
-    !active || stale || !!s?.paused || !!s?.suspended,
+    !active || stale || !!s?.paused || !!s?.suspended || !!(s && 'defense' in s && s.defense.ended),
   );
   connection.className = `connection ${stale ? 'lost' : !active ? 'ready' : s?.paused || s?.suspended ? 'paused' : 'live'}`;
   connection.textContent =
@@ -82,7 +78,7 @@ function render(): void {
       ? stale
         ? 'ממתינים למשחק'
         : !active
-          ? 'מוכן / סבב הגנב בלבד'
+          ? 'מוכן'
           : s.paused
             ? 'המשחק מושהה'
             : s.suspended
@@ -91,12 +87,12 @@ function render(): void {
       : stale
         ? 'WAITING FOR GAME'
         : !active
-          ? 'READY / THIEF ROUND ONLY'
+          ? 'READY'
           : s?.paused
             ? 'GAME PAUSED'
             : s?.suspended
               ? 'GAME HIDDEN'
-              : 'LIVE / SYNCED';
+              : 'LIVE';
   notice.hidden = !s || (!stale && (!active || (!s.paused && !s.suspended)));
   if (s)
     notice.textContent =
@@ -104,12 +100,12 @@ function render(): void {
         ? stale
           ? 'החיבור למשחק אבד. פתחו את מסך המשחק באותו דפדפן כדי להתחבר מחדש.'
           : s.paused
-            ? 'המשחק מושהה. המסך ממתין להמשך המשחק.'
+            ? 'המשחק מושהה.'
             : 'מסך המשחק מוסתר. הציגו את שני החלונות זה לצד זה או בשני מסכים.'
         : stale
           ? 'The game connection is quiet. Return to the main game in this browser to reconnect.'
           : s.paused
-            ? 'The game is paused. This display will continue when the game resumes.'
+            ? 'Game paused.'
             : 'The game is hidden. Keep both windows visible, side by side or on separate monitors.';
 }
 
@@ -183,7 +179,6 @@ document.addEventListener('keydown', (e) => {
 });
 window.addEventListener('pagehide', (e) => {
   if (e.persisted) return;
-  stopFitting();
   clearInterval(timer);
   bus?.close();
   discovery?.close();

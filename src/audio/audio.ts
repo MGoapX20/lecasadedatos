@@ -15,7 +15,8 @@ export type Sfx =
   | 'power'
   | 'snip'
   | 'zap'
-  | 'whoosh';
+  | 'whoosh'
+  | 'escalate';
 
 /**
  * All sound is synthesised, so the game ships with no audio files and still
@@ -232,6 +233,11 @@ export class AudioBus {
         break;
       case 'whoosh':
         this.noise(0.42, 0.07, 260);
+        break;
+      case 'escalate':
+        this.tone(65, 1.2, 'sine', 0.14, 130);
+        this.tone(220, 0.9, 'triangle', 0.06, 660);
+        this.noise(0.8, 0.045, 500);
         break;
     }
   }

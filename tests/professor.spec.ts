@@ -19,7 +19,7 @@ it('publishes the actual mission board and walkthrough advice without changing w
   const {flow,project}=setup();const tick=flow.world.tick;
   const snapshot=project.capture(flow,100,'en') as ThiefSnapshot;
   expect(snapshot.professor?.phases).toHaveLength(4);
-  expect(adviceKey(snapshot)).toBe('right');expect(flow.world.tick).toBe(tick);
+  expect(adviceKey(snapshot)).toBe('circle');expect(flow.world.tick).toBe(tick);
   expect(snapshot.professor?.phases[0]).not.toBe(flow.missions.phases[0]);
 });
 it('prioritizes interactions, transit, and extraction over navigation advice',()=>{
@@ -30,7 +30,7 @@ it('prioritizes interactions, transit, and extraction over navigation advice',()
   s.professor!.guide='garage';expect(adviceKey(s)).toBe('garage');
   s.professor!.guide='van';expect(adviceKey(s)).toBe('van');
   s.exfil.complete=true;expect(adviceKey(s)).toBe('complete');
-  for(const id of ['right','left','entry','prepare','uniform','fuse','card','vault','garage','ride','wall','load','van'])expect(advice[id]).toBeDefined();
+  for(const id of ['circle','entry','prepare','uniform','fuse','card','vault','garage','ride','wall','load','van'])expect(advice[id]).toBeDefined();
 });
 it('does not publish mission details outside the attacker round',()=>{
   const {flow,project}=setup();

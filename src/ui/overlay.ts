@@ -2,8 +2,24 @@ import type { DeviceKind } from '../input/input';
 import type { Entry } from '../game/leaderboard';
 import { formatClock, isRtl, t } from './i18n';
 import type { Phase } from '../game/missions';
+import type { EntrancePressure } from '../game/entranceBoard';
+import { DefenseOverlay } from './defense';
 
 export type ScreenName = 'attract' | 'brief' | 'hud1' | 'hud2' | 'think' | 'results' | 'none';
+
+export interface WayItem extends EntrancePressure {
+  name: string;
+  color: number;
+  planning: boolean;
+}
+
+const ENTRANCE_ICONS: Record<string, string> = {
+  front: '<path d="M5 27V5h22v22M16 5v22M11 15v4m10-4v4M2 27h28"/>',
+  side: '<path d="M15 27V5h12v22M21 15v4M2 16h15m-5-5 5 5-5 5"/>',
+  dock: '<path d="M3 8h16v16H3Zm16 7h6l5 6v3H19"/><circle cx="8" cy="25" r="3"/><circle cx="25" cy="25" r="3"/>',
+  vent: '<path d="m3 12 13-9 13 9M7 12h18v15H7Zm4 4h10m-10 4h10m-10 4h10"/>',
+  sewer: '<ellipse cx="16" cy="17" rx="13" ry="9"/><path d="m8 11 16 10M5 15l16 10m-10 0 13-10M8 21l13-10"/>',
+};
 
 function el<T extends HTMLElement>(id: string): T {
   const node = document.getElementById(id);
@@ -43,6 +59,7 @@ const GLYPHS: Record<DeviceKind, { label: string; round?: boolean }[]> = {
 
 /** All DOM manipulation lives here; screens never touch the document directly. */
 export class Overlay {
+  readonly defense = new DefenseOverlay();
   private screens: Record<Exclude<ScreenName, 'none'>, HTMLElement>;
   private presenter = el('scr-presenter');
   private toastEl = el('toast');
@@ -56,6 +73,7 @@ export class Overlay {
   private current: ScreenName = 'none';
   private presenterOpen = false;
   private menuOpen = false;
+  private waysKey = '';
 
   readonly attractLine = el('attract-line');
   readonly attractGlyphs = el('attract-glyphs');
@@ -72,6 +90,9 @@ export class Overlay {
       think: el('scr-think'),
       results: el('scr-results'),
     };
+    const wantedResize = new ResizeObserver(() => this.fitWanted());
+    wantedResize.observe(this.attractWanted);
+    wantedResize.observe(this.attractWanted.parentElement!);
   }
 
   applyI18n(): void {
@@ -93,6 +114,7 @@ export class Overlay {
       node.classList.toggle('on', key === name);
     }
     this.current = name;
+    this.defense.show(name === 'hud2');
   }
 
   showPresenter(on: boolean): void {
@@ -149,21 +171,28 @@ export class Overlay {
     const rows = board.length
       ? board.slice(0, 8)
       : [{ codename: t('attract.empty'), heldMs: -1, breaches: 0, caught: 0, at: 0 }];
-    // Duplicated so the marquee can loop seamlessly.
-    for (let pass = 0; pass < 2; pass++) {
-      rows.forEach((e, i) => {
-        const span = document.createElement('span');
-        span.className = i === 0 && e.heldMs >= 0 ? 'wanted-entry top' : 'wanted-entry';
-        const rank = document.createElement('b');
-        rank.className = 'rank';
-        rank.textContent = e.heldMs >= 0 ? `${i + 1}` : '';
-        span.appendChild(rank);
-        span.append(
-          e.heldMs >= 0 ? `${e.codename} — ${t('leaderboard.held')} ${formatClock(e.heldMs)}` : e.codename,
-        );
-        track.appendChild(span);
-      });
-    }
+    rows.forEach((e, i) => {
+      const span = document.createElement('span');
+      span.className = i === 0 && e.heldMs >= 0 ? 'wanted-entry top' : 'wanted-entry';
+      const rank = document.createElement('b');
+      rank.className = 'rank';
+      rank.textContent = e.heldMs >= 0 ? `${i + 1}` : '';
+      span.appendChild(rank);
+      span.append(
+        e.heldMs >= 0 ? `${e.codename} — ${t('leaderboard.held')} ${formatClock(e.heldMs)}` : e.codename,
+      );
+      track.appendChild(span);
+    });
+    this.fitWanted();
+  }
+
+  /** Pan a single list only when it overflows; short boards stay still. */
+  private fitWanted(): void {
+    const track = this.attractWanted;
+    const overflow = Math.max(0, track.scrollWidth - track.parentElement!.clientWidth);
+    track.style.setProperty('--wanted-shift', `${isRtl() ? overflow : -overflow}px`);
+    track.style.setProperty('--wanted-duration', `${Math.max(8, overflow / 40)}s`);
+    track.classList.toggle('scrolling', overflow > 1);
   }
 
   // ------------------------------------------------------------- briefings
@@ -483,6 +512,7 @@ export class Overlay {
     locks: number;
     alarm: string;
     alarmReady: boolean;
+    alarmActive: boolean;
     breaches: number;
     caught: number;
     thieves: number;
@@ -492,7 +522,10 @@ export class Overlay {
   }): void {
     el('h2-name').textContent = opts.codename;
     el('h2-locks').textContent = String(opts.locks);
+    el('h2-lock-hint').textContent = t(opts.locks > 0 ? 'defense.lockHint' : 'defense.noLocks');
+    el('h2-lock-action').classList.toggle('empty', opts.locks <= 0);
     el('h2-alarm').textContent = opts.alarm;
+    el('h2-alarm-hint').textContent = t(opts.alarmActive ? 'defense.alarmActiveHint' : opts.alarmReady ? 'defense.alarmHint' : 'defense.cooldown');
     this.alarmButton.classList.toggle('cooling', !opts.alarmReady);
     this.alarmButton.classList.toggle('armed', opts.alarmReady);
     this.alarmButton.disabled = !opts.alarmReady;
@@ -559,43 +592,92 @@ export class Overlay {
     el('h1-arrow-glyph').style.transform = `rotate(${a.angleDeg}deg)`;
   }
 
-  /** The list of ways in: revealed one by one, then checked off as the swarm gets through. */
-  setWays(
-    items: { n: number; name: string; how: string; color: number; state: 'open' | 'breached' | 'held' }[] | null,
-    title?: string,
-  ): void {
-    const panel = el('ways');
+  /** One location, with counts that explain the live pressure on its defenses. */
+  setWays(items: WayItem[] | null, title?: string): void {
+    const panel = el('ways'), list = el('ways-list');
     if (!items) {
       panel.classList.remove('on');
+      list.replaceChildren();
+      this.waysKey = '';
       return;
     }
-    panel.classList.add('on');
+    const key = JSON.stringify([items, title]);
+    if (key === this.waysKey) return;
+    this.waysKey = key;
+    panel.classList.toggle('on', items.length > 0);
+    panel.dataset.planning = String(!!items[0]?.planning);
     if (title !== undefined) el('ways-title').textContent = title;
-    const list = el('ways-list');
-    list.classList.toggle('many', items.length > 10);
-    // Rows are keyed by number so a reveal appends without re-animating the rest.
-    const rows = Array.from(list.children) as HTMLElement[];
-    while (rows.length > items.length) rows.pop()?.remove();
-    items.forEach((it, i) => {
-      let row = rows[i];
-      if (!row) {
-        row = document.createElement('li');
-        row.className = 'way';
-        row.innerHTML =
-          '<span class="way-n"></span><span class="way-swatch"></span><span class="way-text"><span class="way-name"></span><span class="way-how"></span></span><span class="way-state"></span>';
-        list.appendChild(row);
+    el('ways-phase').textContent = t(items[0]?.planning ? 'ways.planned' : 'ways.live');
+    const sections = new Map(Array.from(list.children, node => [(node as HTMLElement).dataset.entry!, node as HTMLElement]));
+    for (const [id, section] of sections) if (!items.some(item => item.entryId === id)) section.remove();
+    items.forEach((item, index) => {
+      let section = sections.get(item.entryId);
+      if (!section) {
+        section = document.createElement('li');
+        section.className = 'way-entry';
+        section.dataset.entry = item.entryId;
+        section.innerHTML = `<span class="way-icon" aria-hidden="true"><svg viewBox="0 0 32 32">${ENTRANCE_ICONS[item.entryId] ?? ENTRANCE_ICONS.front}</svg></span><div class="way-info"><h4 class="way-name"></h4><div class="way-pressure"></div></div>`;
       }
-      row.dataset.state = it.state;
-      (row.querySelector('.way-n') as HTMLElement).textContent = String(it.n);
-      (row.querySelector('.way-swatch') as HTMLElement).style.background = `#${it.color.toString(16).padStart(6, '0')}`;
-      (row.querySelector('.way-name') as HTMLElement).textContent = it.name;
-      (row.querySelector('.way-how') as HTMLElement).textContent = it.how;
-      (row.querySelector('.way-state') as HTMLElement).textContent =
-        it.state === 'breached' ? t('ways.breached') : it.state === 'held' ? t('ways.held') : '';
+      if (list.children[index] !== section) list.insertBefore(section, list.children[index] ?? null);
+      section.style.setProperty('--way-color', `#${item.color.toString(16).padStart(6, '0')}`);
+      section.dataset.tone = item.tone;
+      section.querySelector('.way-name')!.textContent = item.name;
+      const badges: { kind: string; label: string }[] = [];
+      const add = (kind: string, count: number, label = kind) => {
+        if (count) badges.push({ kind, label: t(`ways.${label}${count === 1 ? 'One' : ''}`, { n: count }) });
+      };
+      add('active', item.active);
+      add('incoming', item.incoming, item.planning ? 'attackers' : 'incoming');
+      add('breached', item.breached, 'breachedCount');
+      add('stopped', item.stopped);
+      add('unfinished', item.unfinished);
+      if (!badges.length) badges.push({ kind: 'quiet', label: t('ways.quiet') });
+      const pressure = section.querySelector('.way-pressure')!;
+      const old = Array.from(pressure.children);
+      while (old.length > badges.length) old.pop()!.remove();
+      badges.forEach((badge, i) => {
+        const span = old[i] ?? document.createElement('span');
+        span.className = `way-status ${badge.kind}`;
+        span.textContent = badge.label;
+        if (!span.parentElement) pressure.appendChild(span);
+      });
     });
   }
 
   /** The beat where the AI's routes fan out across the building. */
+  swarmHandoff(opts: { result: string; progress: number } | null): void {
+    el('swarm-handoff').hidden = !opts;
+    el('think-planning').hidden = !!opts;
+    this.screens.think.classList.toggle('handoff', !!opts);
+    if (!opts) return;
+    const result = el('handoff-result');
+    if (result.textContent !== opts.result) result.textContent = opts.result;
+    el('handoff-progress').style.transform = `scaleX(${Math.min(1, Math.max(0, opts.progress))})`;
+    const agents = el('handoff-agents');
+    if (!agents.childElementCount) {
+      for (let i = 0; i < 24; i++) {
+        const agent = document.createElement('i');
+        agent.style.setProperty('--i', String(i));
+        agents.appendChild(agent);
+      }
+    }
+  }
+
+  swarmCountdown(opts: { seconds: number; agents: number } | null): void {
+    el('think-launch').hidden = !opts;
+    this.screens.think.classList.toggle('launching', !!opts);
+    if (!opts) return;
+    const countdown = el('think-countdown'), agents = el('think-agents');
+    const label = t(opts.agents === 1 ? 'handoff.agent' : 'handoff.agents', { n: opts.agents });
+    // Status regions announce changes; do not replace their text every frame.
+    if (countdown.textContent !== String(opts.seconds)) countdown.textContent = String(opts.seconds);
+    if (agents.textContent !== label) agents.textContent = label;
+  }
+
+  setThinkPaused(paused: boolean): void {
+    this.screens.think.classList.toggle('motion-paused', paused);
+  }
+
   think(opts: { ways: number; unit: string; clock: string; note?: string }): void {
     el('think-n').textContent = String(opts.ways);
     el('think-unit').textContent = opts.unit;
@@ -604,6 +686,20 @@ export class Overlay {
   }
 
   // --------------------------------------------------------------- results
+
+  swarmResult(opts: { reason: string; breaches: number; caught: number; progress: number } | null): void {
+    const panel = el('swarm-result');
+    panel.hidden = !opts;
+    if (!opts) return;
+    for (const [id, value] of [
+      ['swarm-result-reason', opts.reason], ['swarm-result-breaches', String(opts.breaches)],
+      ['swarm-result-caught', String(opts.caught)],
+    ]) {
+      const node = el(id);
+      if (node.textContent !== value) node.textContent = value;
+    }
+    el('swarm-result-progress').style.transform = `scaleX(${Math.min(1, Math.max(0, opts.progress))})`;
+  }
 
   private resultTimers: number[] = [];
   private countRaf = 0;

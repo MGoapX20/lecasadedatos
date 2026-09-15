@@ -39,7 +39,37 @@ interface SnapshotBase {
   operator: string;
 }
 export interface StandbySnapshot extends SnapshotBase {
-  state: Exclude<GameState, 'round1'>;
+  state: Exclude<GameState, 'round1' | DefenseStage>;
+}
+export type DefenseStage = 'brief2' | 'round2a' | 'aiThink' | 'round2b';
+export const isDefenseStage = (state: string): state is DefenseStage =>
+  ['brief2', 'round2a', 'aiThink', 'round2b'].includes(state);
+export const isLiveStage = (state: string): boolean => state === 'round1' || isDefenseStage(state);
+
+export type IncidentLevel = 'info' | 'warning' | 'critical' | 'success';
+export type AgentStatus = 'queued' | 'approach' | 'inside' | 'waiting' | 'transit' | 'truckWaiting' | 'truckRiding' | 'picking' | 'blocked' | 'caught' | 'held' | 'expired' | 'breached' | 'extracting' | 'extracted';
+export interface DefenseAgent {
+  id: number; name: string; entry: string; status: AgentStatus; inside: boolean;
+  card: boolean; disguised: boolean;
+}
+export interface DefenseLog {
+  id: number; tick: number; atMs: number; level: IncidentLevel;
+  code: string; source: string; actor?: number; entry?: string;
+}
+export interface DefenseSnapshot extends SnapshotBase {
+  state: DefenseStage;
+  defense: {
+    epoch: string; nowMs: number;
+    ended: 'complete' | 'timeout' | 'caught' | 'held' | 'breached' | null;
+    plannedAgents: number; planningReady: boolean;
+    agents: DefenseAgent[];
+    active: number; queued: number; inside: number; caught: number; held: number; breached: number;
+    alarm: boolean; camerasDown: boolean; locksLeft: number;
+    guards: { id: string; state: string; present: boolean }[];
+    doors: { id: string; locked: boolean; bypassed: boolean }[];
+    logs: DefenseLog[]; totalEvents: number; eventsPerSecond: number; history: number[];
+    capMs: number;
+  };
 }
 export interface ThiefSnapshot extends SnapshotBase {
   professor?: { phases: import('../game/missions').Phase[]; guide: string | null };
@@ -82,7 +112,7 @@ export interface ThiefSnapshot extends SnapshotBase {
   events: JournalEvent[];
 }
 
-export type Snapshot = ThiefSnapshot | StandbySnapshot;
+export type Snapshot = ThiefSnapshot | DefenseSnapshot | StandbySnapshot;
 
 export type WireMessage =
   | { type: 'hello'; v: 2 }
@@ -121,7 +151,9 @@ export const isSnapshot = (x: unknown): x is Snapshot => {
       (Array.isArray(s.events) &&
         Array.isArray(s.objectives) &&
         !!s.security &&
-        !!s.exfil))
+        !!s.exfil)) &&
+    (!isDefenseStage(s.state ?? '') || ('defense' in s && !!s.defense &&
+      Array.isArray(s.defense.agents) && Array.isArray(s.defense.logs)))
   );
 };
 

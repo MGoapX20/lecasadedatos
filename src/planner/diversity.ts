@@ -59,10 +59,11 @@ export class DiversityTracker {
   accept(plan: Plan): void {
     this.seen.add(plan.signature);
     this.coarse.add(coarseSignature(plan.signature));
-    for (const n of plan.nodes) {
-      this.heat[n.cell] += 1;
-      const x = n.cell % this.level.pw;
-      const y = (n.cell / this.level.pw) | 0;
+    const cells = plan.request.coverage ? [...new Set(plan.nodes.map(n => n.cell))] : plan.nodes.map(n => n.cell);
+    for (const cell of cells) {
+      this.heat[cell] += 1;
+      const x = cell % this.level.pw;
+      const y = (cell / this.level.pw) | 0;
       for (let dy = -1; dy <= 1; dy++) {
         const ny = y + dy;
         if (ny < 0 || ny >= this.level.ph) continue;

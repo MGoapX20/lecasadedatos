@@ -4,6 +4,7 @@ import type { PatrolProgram } from '../sim/patrol';
 import { bakeDangerMap, type DangerMap } from './dangerMap';
 import { DiversityTracker, signatureOf } from './diversity';
 import { buildEntryMasks } from './options';
+import { truckWindows, type TruckWindow } from './truck';
 import { createSearchCtx, makeIntervals, search, type SearchCtx, type SearchResult } from './tea';
 import type { SafeIntervals } from './intervals';
 import type { AlarmWindow, Plan, PlanAction, PlanNode, PlanRequest, PlannerStats } from './types';
@@ -18,6 +19,7 @@ export interface JobInput {
   requests: PlanRequest[];
   budgetMs: number;
   keycardCells?: Record<string, number>;
+  cameras?: boolean;
   maxExpansions?: number;
   heuristicWeight?: number;
   entryMasks?: Map<string, Uint8Array>;
@@ -95,6 +97,7 @@ export interface PlanScratch {
   /** Built on first use: every cell safe for the whole horizon. */
   ivNaive: SafeIntervals | null;
   entryMasks: Map<string, Uint8Array>;
+  truckWindows?: Map<number, TruckWindow[]>;
 }
 
 function naiveIntervals(ctx: SearchCtx, scratch: PlanScratch): SafeIntervals {
@@ -117,6 +120,7 @@ function buildBlockMask(
   entryMask: Uint8Array | null,
   useHeat: boolean,
   protectedCells: number[],
+  coverageCuts = 2,
 ): Uint8Array | null {
   const mask = ctx.blockScratch;
   mask.fill(0);
@@ -125,7 +129,58 @@ function buildBlockMask(
     mask.set(entryMask);
     any = true;
   }
-  if (useHeat) {
+  if (useHeat && req.coverage) {
+    // Cut a few previously used corridors, not most of the reachable floor.
+    // Dense random masks used to fail, then fall back to identical shortest paths.
+    const rng = new Rng(req.seed ^ 0x73a4f021);
+    const distance = (a: number, b: number) => Math.max(Math.abs(a % level.pw - b % level.pw),
+      Math.abs(Math.floor(a / level.pw) - Math.floor(b / level.pw)));
+    const keep = (c: number) => protectedCells.some(p => distance(c, p) <= 2);
+    const entrance = level.json.entries.find(e => e.id === req.entryId);
+    const entranceDoor = entrance?.doorId ? level.doorIndex.get(entrance.doorId) : undefined;
+    const anchors: { cell: number; score: number }[] = [];
+    for (let c = 0; c < mask.length; c++) {
+      if (!level.pwalk[c] || !level.pindoor[c] || mask[c] || keep(c) || ctx.heat[c] <= 0) continue;
+      if (entranceDoor !== undefined && level.pdoorAt[c] === entranceDoor) continue;
+      anchors.push({ cell: c, score: ctx.heat[c] * (0.4 + rng.next()) });
+    }
+    anchors.sort((a, b) => b.score - a.score || a.cell - b.cell);
+    const cuts: number[] = [];
+    const visited = new Uint8Array(level.planCount), queue = new Int32Array(level.planCount);
+    // Mandatory chokepoints cannot be diversified. Leave them usable and spend
+    // the avoidance budget on corridors which actually have another way around.
+    const connected = () => {
+      visited.fill(0);
+      let head = 0, tail = 1; queue[0] = protectedCells[0]; visited[queue[0]] = 1;
+      const offer = (cell: number) => {
+        if (cell < 0 || visited[cell] || mask[cell]) return;
+        visited[cell] = 1; queue[tail++] = cell;
+      };
+      while (head < tail) {
+        const c = queue[head++];
+        for (let i = 0; i < 8; i++) offer(ctx.nbr[c * 8 + i]);
+        for (const portal of ctx.portalsByCell.get(c) ?? []) offer(ctx.portalList[portal].toPlan);
+      }
+      return protectedCells.every(c => !!visited[c]);
+    };
+    let tried = 0;
+    for (const anchor of anchors) {
+      if (cuts.some(c => distance(c, anchor.cell) < 6)) continue;
+      if (++tried > 12) break;
+      const changed: number[] = [];
+      const door = level.pdoorAt[anchor.cell];
+      for (let c = 0; c < mask.length; c++) {
+        if (keep(c)) continue;
+        if (!mask[c] && (door >= 0 ? level.pdoorAt[c] === door : distance(c, anchor.cell) <= 1)) {
+          mask[c] = 1; changed.push(c);
+        }
+      }
+      if (!connected()) { for (const c of changed) mask[c] = 0; continue; }
+      cuts.push(anchor.cell);
+      any = true;
+      if (cuts.length >= coverageCuts) break;
+    }
+  } else if (useHeat) {
     const rng = new Rng(req.seed ^ 0x5bf03635);
     const lambda = req.personality.heatLambda;
     const eps = req.personality.noiseEps * 0.035;
@@ -162,7 +217,8 @@ function variantIntervals(input: JobInput, danger: DangerMap, scratch: PlanScrat
         withMargin: false,
         doorLocked: input.doorLocked,
         guardRangeMul,
-        cameras: false,
+        cameras: kind === 'power' ? false : input.cameras,
+        disguised: kind === 'uniform',
       }).bits,
     );
   if (kind === 'uniform') return (scratch.ivDisguised ??= bake(DISGUISE_RANGE_MUL));
@@ -175,19 +231,26 @@ export function planOne(
   req: PlanRequest,
   scratch: PlanScratch,
 ): Plan | null {
-  const { level, ctx, doorLocked } = input;
+  const { level, ctx } = input;
+  const heldKeys = new Set(req.heldKeys);
+  const doorLocked = req.pickedDoors?.length ? input.doorLocked.slice() : input.doorLocked;
+  for (const door of req.pickedDoors ?? []) doorLocked[door] = 0;
   const rules = level.json.rules;
   const horizonQ = danger.horizonQ;
   const entry = level.json.entries.find((e) => e.id === req.entryId);
   if (!entry) return null;
 
-  const startCell = req.startPlanCell ?? fineToPlan(level, cellOf(level, entry.spawn));
-  const entryMask = req.startPlanCell !== undefined ? null : (scratch.entryMasks.get(req.entryId) ?? null);
+  const startCell = req.startPlanCell ?? req.launchPlanCell ?? fineToPlan(level, cellOf(level, entry.spawn));
+  const keepEntry = req.startPlanCell !== undefined && req.coverage && !level.pindoor[startCell];
+  let entryMask = req.startPlanCell !== undefined && !keepEntry ? null : (scratch.entryMasks.get(req.entryId) ?? null);
+  const disguised = level.json.keycards.some(k => k.kind === 'uniform' && heldKeys.has(k.id));
   const intervals = req.naive
     ? naiveIntervals(ctx, scratch)
-    : req.personality.margin === 1 && scratch.ivMargin
-      ? scratch.ivMargin
-      : scratch.ivNormal;
+    : disguised
+      ? variantIntervals(input, danger, scratch, 'uniform')
+      : req.personality.margin === 1 && scratch.ivMargin
+        ? scratch.ivMargin
+        : scratch.ivNormal;
 
   const cellOfItem = (id: string): number => {
     const live = input.keycardCells?.[id];
@@ -202,23 +265,26 @@ export function planOne(
     req.keyStrategy.kind === 'uniform' || req.keyStrategy.kind === 'power'
       ? req.keyStrategy.keyId
       : undefined;
-  const itemCell = itemId ? cellOfItem(itemId) : -1;
+  const needsItem = itemId && !heldKeys.has(itemId) && !(req.keyStrategy.kind === 'power' && input.cameras === false);
+  const itemCell = needsItem ? cellOfItem(itemId) : -1;
   const legs: Legs = {
     startCell,
     cardId: cardDef?.id ?? '',
     cardCell,
-    itemId,
+    itemId: needsItem ? itemId : undefined,
     itemCell,
+    hasCard: !!cardDef && heldKeys.has(cardDef.id),
   };
   const protectedCells = [startCell, level.vaultPlanCell];
   if (cardCell >= 0) protectedCells.push(cardCell);
   if (itemCell >= 0) protectedCells.push(itemCell);
 
-  const attempt = (useHeat: boolean): Plan | null => {
-    const blocked = buildBlockMask(ctx, level, req, entryMask, useHeat, protectedCells);
+  const attempt = (useHeat: boolean, cuts = 2): Plan | null => {
+    const blocked = buildBlockMask(ctx, level, req, entryMask, useHeat, protectedCells, cuts);
     const common = {
       intervals,
       doorLocked,
+      truckWindows: scratch.truckWindows ??= truckWindows(level, danger.baseQ * rules.quantumTicks, horizonQ),
       blocked,
       moveQuanta: req.moveQuanta,
       maxExpansions: input.maxExpansions ?? 120_000,
@@ -226,7 +292,34 @@ export function planOne(
     };
     return runLegs(input, danger, req, common, legs, scratch);
   };
-  return attempt(true) ?? attempt(false);
+  const shaped = () => attempt(true) ?? (req.coverage ? attempt(true, 1) : null) ?? attempt(false);
+  const plan = shaped();
+  if (plan) return plan;
+  // A safe truck ride is still a way into the building when the current patrol
+  // timetable offers no complete vault route. Keep that foothold and replan on
+  // unloading, without claiming a vault breach or bypassing any detection rules.
+  if (req.coverage && entry.kind === 'truck' && !level.pindoor[startCell]) {
+    const portal = level.portals.find(p => p.truckStop !== undefined);
+    if (portal) {
+      const result = search(ctx, { intervals, startCell, startQ: req.startDelayQ,
+        goalCell: portal.toPlan, goalHoldQ: 0, moveQuanta: req.moveQuanta,
+        keyHeld: null, allowLockpick: false, doorLocked,
+        blocked: scratch.entryMasks.get(req.entryId) ?? null,
+        maxExpansions: input.maxExpansions ?? 120_000,
+        truckWindows: scratch.truckWindows });
+      if (result?.nodes.some(n => n.kind === 'portal' && n.ref === portal.def.id)) {
+        return { agentId: req.agentId, request: req, startQ: danger.baseQ, endQ: result.endQ,
+          nodes: result.nodes, ...materialize(level, result.nodes, result.endQ, horizonQ, []),
+          signature: signatureOf(level, req.entryId, 'truck-entry', result.nodes),
+          cost: result.cost, expansions: result.expansions, reachedVault: false, replanOnArrival: true };
+      }
+    }
+  }
+  if (!keepEntry) return null;
+  // An outside replan keeps its entrance assignment if it still works. If the
+  // chief seals that approach, let the agent recover through another entrance.
+  entryMask = null;
+  return shaped();
 }
 
 interface Legs {
@@ -235,6 +328,7 @@ interface Legs {
   cardCell: number;
   itemId?: string;
   itemCell: number;
+  hasCard: boolean;
 }
 
 /**
@@ -289,19 +383,19 @@ function runLegs(
   // The uniform or the fuse box, when this strategy uses one. Taking it changes
   // what the rest of the route has to avoid.
   if (legs.itemId && legs.itemCell >= 0) {
-    const first = leg(legs.itemCell, 0, null);
+    const first = leg(legs.itemCell, 0, legs.hasCard ? legs.cardId : null);
     if (!first) return null;
     take(first);
     pickups.push({ id: legs.itemId, q });
     intervals = variantIntervals(input, danger, scratch, kind === 'uniform' ? 'uniform' : 'power');
   }
 
-  if (cur !== legs.cardCell) {
+  if (!legs.hasCard && cur !== legs.cardCell) {
     const toCard = leg(legs.cardCell, 0, null);
     if (!toCard) return null;
     take(toCard);
   }
-  pickups.push({ id: legs.cardId, q });
+  if (!legs.hasCard) pickups.push({ id: legs.cardId, q });
 
   const toVault = leg(level.vaultPlanCell, 0, legs.cardId);
   if (!toVault) return null;
@@ -345,6 +439,7 @@ export function runJob(input: JobInput): JobResult {
       alarmWindows: input.alarmWindows,
       withMargin,
       doorLocked: input.doorLocked,
+      cameras: input.cameras,
     });
   const entryMasks = input.entryMasks ?? buildEntryMasks(level);
   ctx.heat.fill(0);
@@ -359,14 +454,17 @@ export function runJob(input: JobInput): JobResult {
   let expansions = 0;
   let noPath = 0;
 
+  const searchStarted = Date.now();
+  let attempted = 0;
   for (let i = 0; i < requests.length; i++) {
-    if (Date.now() - t0 > input.budgetMs) break;
+    if (attempted > 0 && Date.now() - searchStarted > input.budgetMs) break;
+    attempted++;
     const plan = planOne(input, danger, requests[i], scratch);
     if (!plan) {
       noPath++;
     } else {
       expansions += plan.expansions;
-      if (tracker.isNew(plan.signature)) {
+      if (plan.request.coverage || tracker.isNew(plan.signature)) {
         tracker.accept(plan);
       }
       plans.push(plan);
@@ -377,13 +475,13 @@ export function runJob(input: JobInput): JobResult {
     }
   }
 
-  input.onProgress?.(requests.length, requests.length, plans.length, tracker.distinct);
+  input.onProgress?.(attempted, requests.length, plans.length, tracker.distinct);
   return {
     plans,
     danger,
     stats: {
       wallMs: Date.now() - t0,
-      searches: requests.length,
+      searches: attempted,
       expansions,
       found: plans.length,
       distinct: tracker.distinct,

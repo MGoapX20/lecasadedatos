@@ -89,6 +89,9 @@ export function buildEntryMasks(level: Level): Map<string, Uint8Array> {
       cells.push(fineToPlan(level, cellOf(level, e.spawn)));
       cells.push(fineToPlan(level, cellOf(level, e.cell)));
     }
+    if (e.kind === 'truck') for (const p of level.portals) {
+      if (p.truckStop !== undefined) cells.push(p.fromPlan, p.toPlan);
+    }
     own.set(e.id, [...new Set(cells)]);
   }
   const masks = new Map<string, Uint8Array>();
@@ -104,7 +107,42 @@ export function buildEntryMasks(level: Level): Map<string, Uint8Array> {
   return masks;
 }
 
-/** Tighter stagger for the live swarm, which only has 45 seconds on screen. */
+/** Tighter stagger so the live swarm fans out during its opening seconds. */
 export const SWARM_DELAYS = [0, 2, 4, 6, 9, 12, 16, 21, 27];
+
+/** Everyone approaches their assigned entrance from the same outside position.
+ * Keep this separate from startPlanCell: live replans can use any way forward,
+ * whereas an initial swarm must still explore all the different entrances. */
+export function enumerateSwarmRequests(level: Level, count: number, seed: number): PlanRequest[] {
+  const front = level.json.entries.find(e => e.id === 'front') ?? level.json.entries[0];
+  const launchPlanCell = fineToPlan(level, cellOf(level, front.spawn));
+  const rng = new Rng(seed);
+  const strategies = keyStrategiesFor(level);
+  rng.shuffle(strategies);
+  const requests: PlanRequest[] = [];
+  if (!strategies.length || !level.json.entries.length) return requests;
+  // Cover every entrance × tactic before spending slots on different start times.
+  // Rotate the first tactic by entrance so even a short budget tries several ideas.
+  for (let round = 0; requests.length < count; round++) {
+    const delay = SWARM_DELAYS[Math.floor(round / strategies.length) % SWARM_DELAYS.length];
+    for (let ei = 0; ei < level.json.entries.length && requests.length < count; ei++) {
+      const i = requests.length;
+      requests.push({
+        agentId: i, seed: (seed * 2654435761 + i * 40503) >>> 0,
+        entryId: level.json.entries[ei].id,
+        keyStrategy: strategies[(round + ei) % strategies.length],
+        startDelayQ: delay, moveQuanta: 1, launchPlanCell, coverage: true,
+        personality: personalityFor(rng),
+      });
+    }
+  }
+  return requests;
+}
+
+/** Search alternatives before choosing the limited set of visible agents. */
+export function enumerateSwarmCandidates(level: Level, agents: number, seed: number): PlanRequest[] {
+  return enumerateSwarmRequests(level, Math.max(agents * 6,
+    level.json.entries.length * keyStrategiesFor(level).length * 2), seed);
+}
 
 export { START_DELAYS };

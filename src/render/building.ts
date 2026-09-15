@@ -20,6 +20,7 @@ import { mergeStatic, type ModelLib } from './models';
 import { signMaterial } from './signs';
 import { surfaces, worldUV } from './textures';
 import { missileHead, uraniumStorage } from './nuclearProps';
+import { READABILITY } from './readability';
 
 const INTERIOR_WALL_H = 2.6;
 /** The shop roof signs, in metres. */
@@ -665,6 +666,11 @@ export function buildBuilding(level: Level, models: ModelLib): BuildingView {
   for (const p of level.json.props) {
     const before = modelProps.length;
     propGeometry(level, p, propBuckets, models, modelProps);
+    // Grow upward from the floor: the walkable footprint still matches the simulation.
+    for (const object of modelProps.slice(before)) {
+      object.position.y *= READABILITY.propHeight;
+      object.scale.y *= READABILITY.propHeight;
+    }
     const key = `${p.cell[0]},${p.cell[1]}`;
     if (p.kind === 'press' && wanted.has(key) && modelProps.length > before) {
       const own = modelProps.splice(before);
@@ -673,6 +679,9 @@ export function buildBuilding(level: Level, models: ModelLib): BuildingView {
       root.add(g);
       namedProps.set(`press:${key}`, g);
     }
+  }
+  for (const { geoms } of propBuckets.values()) {
+    for (const geometry of geoms) geometry.scale(1, READABILITY.propHeight, 1);
   }
   mergeBuckets(propBuckets, root);
   // Static props bake down to one mesh per material; the scene stays cheap.
@@ -770,6 +779,13 @@ export function buildBuilding(level: Level, models: ModelLib): BuildingView {
   // The vault card: a stand, a slowly turning badge and a shaft of light, so it
   // is findable across a dim hall without a label pointing at it.
   const keycards = new Map<number, KeycardView>();
+  const enlargePickup = (object: Group) => {
+    // Keep the animated/published root at scale 1 so resets and pickup flourishes preserve the size.
+    const visual = new Group();
+    visual.add(...object.children);
+    visual.scale.setScalar(READABILITY.pickup);
+    object.add(visual);
+  };
   level.json.keycards.forEach((k, i) => {
     const g = new Group();
     const kind = k.kind ?? 'card';
@@ -805,6 +821,7 @@ export function buildBuilding(level: Level, models: ModelLib): BuildingView {
       halo.rotation.x = -Math.PI / 2;
       halo.position.y = 0.12;
       g.add(beam, halo);
+      enlargePickup(g);
       g.position.set(fineXYToWorldX(level, k.cell[0] + 0.5), 0, fineXYToWorldZ(level, k.cell[1] + 0.5));
       root.add(g);
       keycards.set(i, { root: g, card, beam, halo });
@@ -835,6 +852,7 @@ export function buildBuilding(level: Level, models: ModelLib): BuildingView {
     halo.position.y = 0.12;
 
     g.add(base, post, tray, card, beam, halo);
+    enlargePickup(g);
     g.position.set(fineXYToWorldX(level, k.cell[0] + 0.5), 0, fineXYToWorldZ(level, k.cell[1] + 0.5));
     root.add(g);
     keycards.set(i, { root: g, card, beam, halo });
@@ -919,6 +937,7 @@ export function buildBuilding(level: Level, models: ModelLib): BuildingView {
       grate.rotation.x = -Math.PI / 2;
       grate.position.y = 0.15;
       g.add(grate);
+      g.scale.setScalar(READABILITY.pickup);
       g.position.set(fineXYToWorldX(level, cell[0] + 0.5), 0, fineXYToWorldZ(level, cell[1] + 0.5));
       root.add(g);
       portalMarks.set(`${p.id}:${tag}`, g);

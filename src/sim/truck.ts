@@ -168,6 +168,40 @@ export function stopForCycle(def: DeliveryDef, cycle: number): number {
   return h % def.stops.length;
 }
 
+export interface TruckVisit {
+  stop: number;
+  loadStartTick: number;
+  departTick: number;
+  unloadTick: number;
+  dockEndTick: number;
+}
+
+/** The planner and the visible truck share this exact delivery timetable. */
+export function truckVisits(def: DeliveryDef, tickHz: number, fromTick: number, toTick: number): TruckVisit[] {
+  const visits: TruckVisit[] = [];
+  for (let cycle = Math.floor(fromTick / def.cycleTicks); cycle <= Math.floor(toTick / def.cycleTicks); cycle++) {
+    const stop = stopForCycle(def, cycle), start = cycle * def.cycleTicks;
+    const { legTicks } = tripRoute(def, tickHz, stop);
+    visits.push({ stop, loadStartTick: start + legTicks, departTick: start + legTicks + def.loadTicks,
+      unloadTick: start + 2 * legTicks + def.loadTicks, dockEndTick: start + def.cycleTicks });
+  }
+  return visits;
+}
+
+const tripCache = new WeakMap<DeliveryDef, Map<string, { path: Pt[]; length: number; legTicks: number }>>();
+function tripRoute(def: DeliveryDef, tickHz: number, stop: number) {
+  let trips = tripCache.get(def);
+  if (!trips) { trips = new Map(); tripCache.set(def, trips); }
+  const key = `${tickHz}:${stop}`;
+  let trip = trips.get(key);
+  if (!trip) {
+    const path = outboundPath(def, stop), length = pathLength(path);
+    trip = { path, length, legTicks: Math.max(1, Math.round(length / def.speedCells * tickHz)) };
+    trips.set(key, trip);
+  }
+  return trip;
+}
+
 /** Where the truck is at this tick. Pure, so the planner and the tests agree. */
 export function truckPoseAt(
   def: DeliveryDef,
@@ -181,8 +215,7 @@ export function truckPoseAt(
   out.stop = stop;
   out.dwell = 0;
 
-  const path = outboundPath(def, stop);
-  const legTicks = Math.max(1, Math.round((pathLength(path) / def.speedCells) * tickHz));
+  const { path, length, legTicks } = tripRoute(def, tickHz, stop);
   const loadStart = legTicks;
   const backStart = loadStart + def.loadTicks;
   const unloadStart = backStart + legTicks;
@@ -190,7 +223,7 @@ export function truckPoseAt(
 
   if (t < loadStart) {
     out.phase = 'outbound';
-    walk(path, (t / legTicks) * pathLength(path), out);
+    walk(path, (t / legTicks) * length, out);
   } else if (t < backStart) {
     out.phase = 'loading';
     out.dwell = (t - loadStart) / Math.max(1, def.loadTicks);
@@ -202,7 +235,7 @@ export function truckPoseAt(
   } else if (t < unloadStart) {
     out.phase = 'inbound';
     const back = [...path].reverse();
-    walk(back, ((t - backStart) / legTicks) * pathLength(back), out);
+    walk(back, ((t - backStart) / legTicks) * length, out);
   } else if (t < parkedStart) {
     out.phase = 'unloading';
     out.dwell = (t - unloadStart) / Math.max(1, def.unloadTicks);

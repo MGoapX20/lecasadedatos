@@ -3,6 +3,7 @@ import { GuidedWalkthrough } from '../src/game/walkthrough';
 import { MissionTracker } from '../src/game/missions';
 import { SimWorld } from '../src/sim/world';
 import { loadMint } from './helpers';
+import { reconRoute } from '../src/game/recon';
 
 function setup() {
   const level = loadMint();
@@ -16,7 +17,7 @@ function setup() {
     if (kind === 'dock') missions.note({ kind:'truckLeave', thief:p.id, inside:true });
     p.x = kind === 'dock' ? 73.5 : 48.5; p.y = kind === 'dock' ? 26.5 : 62.5;
   };
-  return { level, world, p, guide, read, enter };
+  return { level, world, p, guide, missions, read, enter };
 }
 
 describe('advisory walkthrough', () => {
@@ -46,21 +47,45 @@ describe('advisory walkthrough', () => {
     world.setPlayerMove(0, 0); world.step();
     expect(world.drainEvents().some(event => event.kind === 'breach')).toBe(false);
   });
-  it('starts with accessible right and left waypoints, then offers every entrance', () => {
-    const { level, p, read, guide } = setup();
-    for (const id of ['right','left']) {
-      const step = read()!; expect(step.id).toBe(id);
-      const [x,y] = step.targets[0].cell;
-      expect(level.walk[y * level.w + x]).toBe(1);
-      p.x=x+.5; p.y=y+.5;
+  it('guides a full outdoor circuit, then offers discovered entrances and clears the floor route', () => {
+    const { level, world, p, read, missions } = setup();
+    world.truck.x = world.truck.y = 1000;
+    expect(read()?.id).toBe('circle');
+    expect(read()?.floorRoute?.cells.length).toBeGreaterThan(100);
+    for (const cell of reconRoute(level).cells) {
+      p.x = cell % level.w + .5; p.y = Math.floor(cell / level.w) + .5;
+      read();
     }
-    expect(read()?.targets).toHaveLength(5);
-    guide.reset(); p.x=48.5; p.y=73.5;
-    expect(read()?.id).toBe('right');
+    expect(read()?.id).toBe('entry');
+    expect(read()?.floorRoute).toBeUndefined();
+    expect(read()?.targets.some(target => target.mark?.kind === 'truck')).toBe(false);
+    expect(read()?.targets.length).toBeGreaterThan(0);
+    missions.reset(); p.x=48.5; p.y=73.5;
+    expect(read()?.id).toBe('circle');
+  });
+  it('shows newly discovered yellow markers alongside the green recon trail', () => {
+    const { level, world, p, read } = setup();
+    world.truck.x = world.truck.y = 1000;
+    const start = read()!;
+    expect(start.floorRoute).toBeDefined();
+    expect(start.targets.map(target => target.mark)).toEqual([{ kind: 'door', id: 'd_front' }]);
+    for (const id of ['side', 'vent', 'sewer']) {
+      const entry = level.json.entries.find(e => e.id === id)!;
+      p.x = entry.spawn[0] + 2.5; p.y = entry.spawn[1] + .5;
+      const step = read()!;
+      expect(step.id).toBe('circle');
+      expect(step.floorRoute).toBeDefined();
+      expect(step.targets.map(target => target.mark)).toContainEqual(entry.doorId
+        ? { kind: 'door', id: entry.doorId } : { kind: 'portal', id: `p_${id}` });
+      expect(step.targets.some(target => target.mark?.kind === 'truck')).toBe(false);
+    }
+    world.truck.x = p.x + 1; world.truck.y = p.y;
+    expect(read()?.targets.map(target => target.mark)).toContainEqual({ kind: 'truck' });
   });
   it('allows entering early and chooses power first for the vent', () => {
     const { enter, read, world } = setup(); enter('vent');
     expect(read()?.id).toBe('fuse');
+    expect(read()?.floorRoute).toBeUndefined();
     world.setPowerEnabled(false);
     expect(read()?.id).toBe('uniform');
   });

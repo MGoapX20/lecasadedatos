@@ -12,6 +12,7 @@ export interface SceneSnapshot {
   doors: [number, number][]; cameras: [number, number][];
   keys: [number, ObjectPose, ObjectPose][]; hole: boolean; power: boolean;
   truck: ObjectPose | null; van: ObjectPose | null;
+  truckPassengers?: number;
 }
 export interface AgentRoster {
   type: 'roster'; source: string; epoch: string; seq: number; stage: string;
@@ -38,6 +39,9 @@ export function agentInfo(t: Thief): AgentInfo {
   const live = t.active && !t.caught && !t.retired && !t.breached;
   const node = t.plan?.nodes[t.nodeIdx];
   const action = t.caught ? 'Caught' : t.breached ? 'Vault reached' : !live ? 'Held'
+    : t.ridingTruck ? 'Stowed in supplier truck'
+    : t.waitingForTruck ? 'Waiting for supplier truck'
+    : t.awaitingPlan ? 'Planning from inside the loading bay'
     : t.hidden ? (node?.kind === 'portal' ? 'In transit' : 'Waiting to enter')
     : t.blockedByDoor >= 0 ? 'Blocked at door'
     : t.lockpickDoor >= 0 || node?.kind === 'lockpick' ? 'Picking lock'

@@ -47,6 +47,8 @@ export interface RuntimePortal {
   fromFine: number;
   toFine: number;
   quanta: number;
+  /** Delivery stop for a scheduled truck edge, never an always-open portal. */
+  truckStop?: number;
 }
 
 export interface Level {
@@ -342,7 +344,10 @@ export function buildLevel(json: LevelJson): Level {
   level.vaultFineCell = cellOf(level, json.vault.cell);
   level.vaultPlanCell = fineToPlan(level, level.vaultFineCell);
 
-  for (const def of json.portals) {
+  const runtimePortals = json.portals.flatMap<{ def: PortalDef; truckStop?: number }>(def => def.kind === 'truck' || def.id === 'p_truck'
+    ? (json.delivery?.stops ?? []).map((from, truckStop) => ({ def: { ...def, from, kind: 'truck' as const }, truckStop }))
+    : [{ def, truckStop: undefined }]);
+  for (const { def, truckStop } of runtimePortals) {
     const fromFine = cellOf(level, def.from);
     const toFine = cellOf(level, def.to);
     const rp: RuntimePortal = {
@@ -352,6 +357,7 @@ export function buildLevel(json: LevelJson): Level {
       fromPlan: fineToPlan(level, fromFine),
       toPlan: fineToPlan(level, toFine),
       quanta: def.traverseQuanta,
+      truckStop,
     };
     level.portals.push(rp);
     pushPortal(level, rp.fromPlan, rp);

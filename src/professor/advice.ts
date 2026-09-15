@@ -8,10 +8,11 @@ export function adviceKey(s: ThiefSnapshot): string {
   if (s.player?.hidden) return 'transit';
   if (s.professor?.guide) return s.professor.guide;
   if (s.player?.breached) return !s.exfil.hole ? 'wall' : s.player.carrying ? 'van' : 'load';
-  return s.phase === 'recon' ? 'right' : s.phase === 'foothold' ? 'entry' : 'prepare';
+  return s.phase === 'recon' ? 'circle' : s.phase === 'foothold' ? 'entry' : 'prepare';
 }
 
 export const advice: Record<string, [string, string, string]> = {
+  circle: ['Circle around the building', 'Walk either direction around the base and back to the front. Green arrows guide the circuit; yellow arrows mark entrances as you discover them.', 'Use arrow keys, WASD or click the ground to move. Q / E rotates your view.'],
   right: ['Explore the right side', 'Walk around the right side of the base and look for possible entrances. Get close to investigate them.', 'Use the arrow keys or WASD to move. Q / E rotates your view.'],
   left: ['Continue around the left side', 'Complete your survey on the other side. Reconnaissance reveals alternatives before you commit to one.', 'Get close to an entrance to discover it.'],
   entry: ['Choose your way inside', 'Any discovered entrance can work. Pick an approach you want to try; you do not need to enter through all five.', 'Follow an entrance arrow, or use the live map to orient yourself.'],

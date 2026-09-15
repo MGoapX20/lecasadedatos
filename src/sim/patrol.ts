@@ -298,6 +298,41 @@ export function poseAt(program: PatrolProgram, tick: number, out: Pose = blankPo
 }
 
 /**
+ * The walk a reposition order will use, starting at the guard's live position.
+ * Sharing it with dispatch keeps the distance comparison and movement aligned.
+ */
+export function guardOrderRoute(
+  level: Level,
+  from: { x: number; y: number },
+  targetCell: number,
+): { points: number[][]; distance: number } | null {
+  if (!Number.isInteger(targetCell) || targetCell < 0 || targetCell >= level.cellCount || !level.walk[targetCell]) return null;
+  if (!Number.isFinite(from.x) || !Number.isFinite(from.y) || from.x < 0 || from.y < 0 || from.x >= level.w || from.y >= level.h) return null;
+  const fromCell = Math.floor(from.y) * level.w + Math.floor(from.x);
+  if (!level.walk[fromCell]) return null;
+  // Commands use the exact destination. Snapping a point beside a wall onto
+  // another room's clearance grid can make an unreachable guard seem nearest.
+  let grid = level.walkGuard;
+  let path = staticAStar(grid, level.w, level.h, fromCell, targetCell, level.scratch);
+  if (!path) {
+    grid = level.walk;
+    path = staticAStar(grid, level.w, level.h, fromCell, targetCell, level.scratch);
+  }
+  if (!path) return null;
+  const cells = simplifyPath(path, grid, level.w, level.h);
+  const points: number[][] = [[from.x, from.y]];
+  let distance = 0;
+  for (let i = 1; i < cells.length; i++) {
+    const c = cells[i];
+    const point = [(c % level.w) + 0.5, ((c / level.w) | 0) + 0.5];
+    const previous = points[points.length - 1];
+    distance += Math.hypot(point[0] - previous[0], point[1] - previous[1]);
+    points.push(point);
+  }
+  return { points, distance };
+}
+
+/**
  * Append a reposition order. The past is never rewritten, so plans made before
  * this call stay valid up to `startTick` and the planner can simply re-read the
  * program to see the new future.
@@ -312,18 +347,10 @@ export function orderGuardTo(
   fromPos?: { x: number; y: number },
 ): void {
   const from = fromPos ?? poseAt(program, startTick);
-  const fromCell =
-    Math.min(level.h - 1, Math.max(0, Math.floor(from.y))) * level.w +
-    Math.min(level.w - 1, Math.max(0, Math.floor(from.x)));
-  const path = guardPath(level, fromCell, targetCell);
-  const cells = path ? simplifyPath(path, level.walkGuard, level.w, level.h) : [fromCell, targetCell];
-  const points: number[][] = [[from.x, from.y]];
-  const holds: number[] = [0];
-  for (let i = 1; i < cells.length; i++) {
-    const c = cells[i];
-    points.push([(c % level.w) + 0.5, ((c / level.w) | 0) + 0.5]);
-    holds.push(0);
-  }
+  const route = guardOrderRoute(level, from, targetCell);
+  if (!route) return;
+  const { points } = route;
+  const holds = points.map(() => 0);
   const steps = buildSteps(points, holds, program.speedCellsPerTick);
   const { starts, total } = startsOf(steps);
   const last = points[points.length - 1];

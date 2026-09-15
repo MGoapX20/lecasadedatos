@@ -385,7 +385,7 @@
         24
       ],
       "traverseQuanta": 36,
-      "kind": "climb"
+      "kind": "truck"
     }
   ],
   "entries": [
@@ -1089,8 +1089,8 @@
     {
       "kind": "crate",
       "cell": [
-        75,
-        37
+        78,
+        30
       ],
       "solid": true,
       "radius": 1.1

@@ -20,8 +20,15 @@ export interface PlanRequest {
   agentId: number;
   seed: number;
   entryId: string;
+  /** Shared swarm launch point. The assigned entrance still constrains the route. */
+  launchPlanCell?: number;
+  /** Spend route-shaping effort on ground not yet covered by this swarm. */
+  coverage?: boolean;
   /** Replans start from where the agent already is, not from an entry. */
   startPlanCell?: number;
+  /** Inventory and locks already bypassed by a live agent being replanned. */
+  heldKeys?: string[];
+  pickedDoors?: number[];
   keyStrategy: KeyStrategy;
   startDelayQ: number;
   /** Quanta consumed per plan cell. 1 = machine speed, 2 = a walking human. */
@@ -74,6 +81,8 @@ export interface Plan {
   cost: number;
   expansions: number;
   reachedVault: boolean;
+  /** A valid initial foothold; continue searching from inside after arrival. */
+  replanOnArrival?: boolean;
 }
 
 export interface AlarmWindow {
@@ -91,6 +100,7 @@ export interface DynamicSnapshot {
   /** Fine cell per key id. The worker holds its own copy of the level, so the
    *  card's chosen spot has to travel with the job. */
   keycardCells?: Record<string, number>;
+  cameras?: boolean;
 }
 
 export interface PlannerStats {

@@ -46,7 +46,7 @@ export interface PortalDef {
   from: CellXY;
   to: CellXY;
   traverseQuanta: number;
-  kind: 'vent' | 'sewer' | 'climb';
+  kind: 'vent' | 'sewer' | 'climb' | 'truck';
   bidirectional?: boolean;
 }
 

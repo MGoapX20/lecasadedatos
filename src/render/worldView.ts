@@ -52,6 +52,11 @@ import { DISGUISE_RANGE_MUL } from '../sim/world';
 import type { ObjectPose, SceneSnapshot } from '../agent-views/state';
 import type { CharacterPose } from './characters';
 import { BakedCharacterBatch } from './bakedCharacters';
+import { withCameraClearance } from './cameraClearance';
+import { DefenseRoute } from './defenseRoute';
+import { ReconFloorRoute } from './reconRoute';
+import type { FloorRoute } from '../game/recon';
+import { READABILITY, characterHeight, GUARD_POSE_SCALE, PLAYER_POSE_SCALE, THIEF_POSE_SCALE } from './readability';
 
 interface Anim {
   phase: number;
@@ -73,6 +78,10 @@ const VAN_WIDTH = 2.1;
  * this exists, which is what lets the same world run headless in tests.
  */
 export class WorldView {
+  private defenseRoute = new DefenseRoute();
+  setDefensePreview(points: number[][] | null): void { this.defenseRoute.set(this.level, points); }
+  private reconRoute = new ReconFloorRoute();
+  setReconRoute(route: FloorRoute | null): void { this.reconRoute.set(this.level, route); }
   readonly root = new Group();
   readonly building: BuildingView;
   readonly city: CityView;
@@ -82,6 +91,8 @@ export class WorldView {
   readonly ribbons = new WayRibbons();
   /** The supplier's truck, driven straight from the simulation's pose. */
   private truck: Object3D | null = null;
+  private truckPassengers = 0;
+  private truckBadge = new Sprite(new SpriteMaterial({ depthTest: false, depthWrite: false, toneMapped: false }));
   /** The van waiting at the breach, and the bundles stacking up in the back. */
   private van: Object3D | null = null;
   private vanLoads: Object3D[] = [];
@@ -107,6 +118,7 @@ export class WorldView {
   setGuideTargets(targets: GuideTarget[]): void {
     while (this.guideArrows.length < targets.length) {
       const g = new Group();
+      g.scale.setScalar(READABILITY.indicator);
       const head = new Mesh(this.guideHead, this.guideMaterial);
       head.rotation.z = Math.PI; head.position.y = .325; head.renderOrder = 102;
       const stem = new Mesh(this.guideStem, this.guideMaterial);
@@ -198,7 +210,12 @@ export class WorldView {
     const truckTpl = models.props.get('truck');
     if (truckTpl && level.json.delivery) {
       this.truck = truckTpl.clone(true);
+      this.truck.scale.y *= READABILITY.propHeight;
       this.root.add(this.truck);
+      this.truckBadge.scale.set(3.6, 1.8, 1);
+      this.truckBadge.renderOrder = 20;
+      this.truckBadge.visible = false;
+      this.root.add(this.truckBadge);
     }
     if (level.json.exfil) this.buildExfil(models, level.json.exfil.loads);
     this.thieves = spectator && models.thief ? new BakedCharacterBatch(capacity, models.thief, models.guard) : makeThiefBatch(capacity, models);
@@ -279,6 +296,8 @@ export class WorldView {
       this.fx.add(sp);
     }
     this.fx.add(
+      this.defenseRoute.root,
+      this.reconRoute.mesh,
       this.playerLight,
       this.thiefPulse.mesh,
       this.orderPulse.mesh,
@@ -303,6 +322,7 @@ export class WorldView {
   private buildExfil(models: ModelLib, loads: number): void {
     const tpl = models.props.get('suv') ?? models.props.get('car');
     const van = new Group();
+    van.scale.y = READABILITY.propHeight;
     const probe = new Color();
     if (tpl) {
       // The model's length runs along its own z; the rest of the simulation
@@ -386,9 +406,11 @@ export class WorldView {
       }),
     );
     this.carried.add(held, glow);
+    this.carried.scale.setScalar(READABILITY.character);
     this.carried.visible = false;
     this.root.add(this.carried);
     this.carryRing = makeMarkerRing(0xb9e6f4, 0.74, 1.0);
+    this.carryRing.scale.setScalar(READABILITY.indicator);
     this.carryRing.visible = false;
     this.root.add(this.carryRing);
   }
@@ -414,7 +436,7 @@ export class WorldView {
       cameras: [...this.building.cameras].map(([id, object]) => [id, object.rotation.y]),
       keys: [...this.building.keycards].map(([id, key]) => [id, pose(key.root), pose(key.card)]),
       hole: world.holeOpen, power: !world.camerasDown,
-      truck: this.truck ? pose(this.truck) : null, van: this.van ? pose(this.van) : null };
+      truck: this.truck ? pose(this.truck) : null, truckPassengers: this.truckPassengers, van: this.van ? pose(this.van) : null };
   }
 
   /** Apply a display replica only; this view has no simulation or planner. */
@@ -443,6 +465,7 @@ export class WorldView {
     };
     for (const [id, root, card] of snapshot.keys) { const key = this.building.keycards.get(id); if (key) { apply(key.root, root); apply(key.card, card); } }
     apply(this.truck, snapshot.truck); apply(this.van, snapshot.van);
+    this.updateTruckBadge(snapshot.truckPassengers ?? 0);
     this.building.setHole(snapshot.hole); this.building.setCutaway(false);
     for (const beam of this.building.cameraBeams.values()) beam.visible = false;
     // Omit overhead cues and distant city scenery in the small first-person views.
@@ -454,7 +477,9 @@ export class WorldView {
   withAgentCamera(id: number, render: (x: number, eye: number, z: number, facing: number) => void): void {
     const pose = this.agentPoses.get(id), slot = this.thiefSlots.get(id);
     if (!pose || slot === undefined) return;
-    this.thieves.withHidden(slot, () => render(pose.x, pose.crouch ? 1.25 : 1.6, pose.z, pose.facingRad));
+    const eye = characterHeight(pose.scale) * (pose.crouch ? 1.25 / 1.72 : 1.6 / 1.72);
+    const actors = [...this.agentPoses].map(([id, pose]) => ({ slot: this.thiefSlots.get(id) ?? -1, pose }));
+    withCameraClearance(this.thieves, { slot, pose }, actors, () => render(pose.x, eye, pose.z, pose.facingRad));
   }
 
   /** The breach, the van driving up, and the money going into it. */
@@ -492,9 +517,9 @@ export class WorldView {
         // Held out in front, bobbing with the walk so it reads as carried
         // rather than stuck to him.
         this.carried.position.set(
-          wx + Math.cos(p.facing * DEG) * 0.46,
-          1.16 + Math.sin(this.carryBob) * 0.05,
-          wz + Math.sin(p.facing * DEG) * 0.46,
+          wx + Math.cos(p.facing * DEG) * 0.46 * READABILITY.character,
+          (1.16 + Math.sin(this.carryBob) * 0.05) * READABILITY.character,
+          wz + Math.sin(p.facing * DEG) * 0.46 * READABILITY.character,
         );
         this.carried.rotation.y = -p.facing * DEG;
         this.carryRing.position.set(wx, 0.06, wz);
@@ -663,7 +688,7 @@ export class WorldView {
       pose.phase = a.phase;
       pose.moving = Math.min(1, (moved / cs) * 6);
       pose.crouch = t.lockpickDoor >= 0 || t.blockedByDoor >= 0 || t.waiting ? 1 : 0;
-      pose.scale = t.id === world.playerId ? 1.5 : 1.28;
+      pose.scale = t.id === world.playerId ? PLAYER_POSE_SCALE : THIEF_POSE_SCALE;
       pose.tint = THIEF_TINTS[t.id % THIEF_TINTS.length];
       pose.variant = world.isDisguised(t) ? 1 : 0;
       if (t.id === world.playerId) {
@@ -671,9 +696,9 @@ export class WorldView {
         this.playerRing.visible = visible;
         this.playerRing.position.set(pose.x, 0.05, pose.z);
         // Grace reads as a blink, the same as every game the visitor grew up with.
-        this.playerRing.scale.setScalar(t.graceTicks > 0 ? 1 + 0.25 * Math.sin(world.tick * 0.8) : 1);
+        this.playerRing.scale.setScalar(READABILITY.indicator * (t.graceTicks > 0 ? 1 + 0.25 * Math.sin(world.tick * 0.8) : 1));
         this.playerLight.visible = visible;
-        this.playerLight.position.set(pose.x, 2.6, pose.z);
+        this.playerLight.position.set(pose.x, characterHeight(pose.scale) + .5, pose.z);
         playerShown = true;
       } else if (visible) {
         loneCount++;
@@ -685,7 +710,7 @@ export class WorldView {
       if (visible) {
         this.markScratch.position.set(pose.x, 0.07, pose.z);
         this.markScratch.rotation.set(0, 0, 0);
-        this.markScratch.scale.setScalar(t.id === world.playerId ? 1.5 : fewThieves ? 1.7 : 1);
+        this.markScratch.scale.setScalar(READABILITY.indicator * (t.id === world.playerId ? 1.5 : fewThieves ? 1.7 : 1));
         this.markScratch.updateMatrix();
         this.thiefMarks.setMatrixAt(slot, this.markScratch.matrix);
       } else {
@@ -726,7 +751,7 @@ export class WorldView {
       pose.facingRad = g.facing * DEG;
       pose.phase = a.phase;
       pose.moving = Math.min(1, (moved / cs) * 6);
-      pose.scale = 1.4;
+      pose.scale = GUARD_POSE_SCALE;
       this.guards.setPose(i, pose);
       this.guardPoses[i] = pose;
 
@@ -741,9 +766,9 @@ export class WorldView {
         glyph.visible = g.present && st !== 'patrol' && (opts.showCones ?? true);
         this.guardGlyphPop[i] = Math.max(0, this.guardGlyphPop[i] - dtSec * 4);
         const pop = this.guardGlyphPop[i];
-        const size = (st === 'chase' ? 1.6 : 1.3) * (1 + pop * 0.9);
+        const size = READABILITY.indicator * (st === 'chase' ? 1.6 : 1.3) * (1 + pop * 0.9);
         glyph.scale.setScalar(size);
-        glyph.position.set(pose.x, 3.1 + pop * 0.6, pose.z);
+        glyph.position.set(pose.x, characterHeight(pose.scale) + .9 + pop * .6, pose.z);
       }
 
       const cone = this.guardCones[i];
@@ -826,6 +851,7 @@ export class WorldView {
       );
     });
 
+    this.selectRing.scale.setScalar(READABILITY.indicator);
     if (opts.selectedGuard !== undefined && opts.selectedGuard >= 0) {
       const g = world.guards[opts.selectedGuard];
       this.selectRing.visible = true;
@@ -891,8 +917,8 @@ export class WorldView {
       ring.visible = interactive && g.present;
       if (!ring.visible) return;
       ring.position.set(fineXYToWorldX(level, g.x), 0.05, fineXYToWorldZ(level, g.y));
-      const hot = opts.hoverGuard === i;
-      ring.scale.setScalar(hot ? 1.35 : 1);
+      const hot = opts.hoverGuard === i || opts.selectedGuard === i;
+      ring.scale.setScalar(READABILITY.indicator * (hot ? 1.35 : 1));
       const m = ring.material as MeshBasicMaterial;
       m.opacity = hot ? 0.95 : 0.4;
     });
@@ -904,7 +930,7 @@ export class WorldView {
       const hot = opts.hoverDoor === i;
       mark.scale.setScalar(hot ? 1.5 : 1);
       const m = mark.material as MeshBasicMaterial;
-      m.color.setHex(locked ? PALETTE.redBright : PALETTE.gold);
+      m.color.setHex(locked ? 0x8edaff : PALETTE.gold);
       m.opacity = hot ? 0.95 : 0.42;
     });
 
@@ -944,12 +970,14 @@ export class WorldView {
       );
       this.truck.rotation.y = -world.truck.facing * DEG;
     }
+    this.updateTruckBadge(world.thieves.filter(t => t.active && t.ridingTruck).length + (world.playerInTruck ? 1 : 0));
     this.updateExfil(world, level);
     this.city.update(dtSec);
     this.thieves.update(dtSec);
     this.guards.update(dtSec);
     this.money.update(dtSec);
     this.phaseGlow.update(dtSec);
+    this.reconRoute.update(dtSec);
     this.guideTime += dtSec;
     for (const g of this.guideArrows) { g.rotation.y = this.guideTime * 2; }
     this.hintPulse.hide();
@@ -1052,19 +1080,49 @@ export class WorldView {
     );
   }
 
+  private updateTruckBadge(count: number): void {
+    if (count !== this.truckPassengers) {
+      this.truckPassengers = count;
+      this.truckBadge.material.map?.dispose();
+      this.truckBadge.material.map = count ? stowawayTexture(count) : null;
+      this.truckBadge.material.needsUpdate = true;
+    }
+    this.truckBadge.visible = count > 0 && !!this.truck?.visible;
+    if (this.truck) this.truckBadge.position.copy(this.truck.position).y += 5.2;
+  }
+
   dispose(): void {
+    this.truckBadge.material.map?.dispose();
+    this.truckBadge.material.dispose();
     this.baseBanners.dispose();
     this.thieves.dispose();
     this.guards.dispose();
     for (const c of this.guardCones) c.dispose();
     for (const c of this.cameraCones) c.dispose();
     this.phaseGlow.dispose();
+    this.defenseRoute.dispose();
+    this.reconRoute.dispose();
     this.guideHead.dispose(); this.guideStem.dispose(); this.guideMaterial.dispose(); this.guideMask.dispose(); this.guideOutline.dispose();
     this.stage.scene.remove(this.root);
   }
 }
 
 export { MeshBasicMaterial as _MeshBasicMaterial };
+
+/** Mask + passenger count: language-independent, and only visible during a real ride. */
+function stowawayTexture(count: number): CanvasTexture {
+  const canvas = document.createElement('canvas'); canvas.width = 256; canvas.height = 128;
+  const ctx = canvas.getContext('2d')!;
+  ctx.fillStyle = 'rgba(24, 16, 24, 0.94)'; ctx.strokeStyle = '#ffb56b'; ctx.lineWidth = 5;
+  ctx.beginPath(); ctx.roundRect(5, 5, 246, 118, 28); ctx.fill(); ctx.stroke();
+  ctx.fillStyle = '#ffb56b';
+  ctx.beginPath(); ctx.ellipse(64, 64, 40, 30, 0, 0, Math.PI * 2); ctx.fill();
+  ctx.fillStyle = '#181018';
+  for (const x of [48, 80]) { ctx.beginPath(); ctx.ellipse(x, 60, 10, 7, 0, 0, Math.PI * 2); ctx.fill(); }
+  ctx.fillStyle = '#fff4df'; ctx.font = 'bold 70px sans-serif'; ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
+  ctx.fillText(String(count), 176, 68);
+  const tex = new CanvasTexture(canvas); tex.colorSpace = SRGBColorSpace; return tex;
+}
 
 /**
  * A dead-camera badge: a lightning bolt with a bar struck through it. Drawn

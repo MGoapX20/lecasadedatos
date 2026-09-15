@@ -32,6 +32,7 @@ export interface JobOptions {
   alarmWindows: AlarmWindow[];
   requests: PlanRequest[];
   keycardCells?: Record<string, number>;
+  cameras?: boolean;
   budgetMs?: number;
   onPlans?: (plans: Plan[]) => void;
   onProgress?: (done: number, total: number, found: number, distinct: number) => void;
@@ -64,7 +65,10 @@ export class PlannerClient {
         }
       };
       this.worker.addEventListener('message', onReady);
-      this.worker.addEventListener('error', (e) => reject(e));
+      this.worker.addEventListener('error', (e) => {
+        reject(e);
+        this.failActive(e);
+      });
     });
     this.worker.addEventListener('message', (ev: MessageEvent<PlannerResponseMsg>) =>
       this.onMessage(ev.data),
@@ -74,6 +78,12 @@ export class PlannerClient {
 
   whenReady(): Promise<void> {
     return this.ready;
+  }
+
+  private failActive(error: unknown): void {
+    const active = this.active;
+    this.active = null;
+    active?.reject(error);
   }
 
   private onMessage(msg: PlannerResponseMsg): void {
@@ -122,10 +132,13 @@ export class PlannerClient {
           guardPrograms: opts.guardPrograms,
           alarmWindows: opts.alarmWindows,
           keycardCells: opts.keycardCells,
+          cameras: opts.cameras,
         },
         requests: opts.requests,
         budgetMs: opts.budgetMs ?? 4000,
       });
+    }, error => {
+      if (this.active?.jobId === jobId) this.failActive(error);
     });
     return { jobId, promise, cancel: () => this.cancel(jobId) };
   }
