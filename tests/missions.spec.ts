@@ -2,6 +2,7 @@ import { describe, expect, it } from 'vitest';
 import { MissionTracker } from '../src/game/missions';
 import { SimWorld } from '../src/sim/world';
 import { loadMint } from './helpers';
+import { reconRoute } from '../src/game/recon';
 
 const level = loadMint();
 
@@ -54,18 +55,20 @@ describe('the mission board', () => {
     expect(second, 'a discovery is news only once').not.toContain('foothold.vent');
   });
 
-  it('requires all five ways as well as circling the building to finish recon', () => {
+  it('finishes recon after a full circuit without requiring all five entrances', () => {
     const { m, world, player } = start();
+    // The moving supplier may be elsewhere during the walk; it must not hold up recon.
+    world.truck.x = 1000; world.truck.y = 1000;
     expect(phase(m, 'recon').done).toBe(false);
-    const at = (id: string) => level.json.entries.find((e) => e.id === id)!.spawn;
-    stand(m, world, player, at('vent')[0] + 3, at('vent')[1]);
-    stand(m, world, player, at('sewer')[0] + 3, at('sewer')[1]);
-    stand(m, world, player, at('front')[0], at('front')[1]);
-    stand(m, world, player, at('side')[0] - 3, at('side')[1]);
-    expect(obj(m, 'recon', 'recon.ways').state, 'four ways is not enough').toBe('open');
-    expect(phase(m, 'recon').done).toBe(false);
-    stand(m, world, player, world.truck.x, world.truck.y);
-    expect(obj(m, 'recon', 'recon.ways').state).toBe('done');
+    expect(phase(m, 'recon').objectives.map(o => o.id)).toEqual(['recon.circle']);
+    const route = reconRoute(level);
+    for (let i = 0; i < route.cells.length; i++) {
+      const cell = route.cells[i];
+      stand(m, world, player, cell % level.w, Math.floor(cell / level.w));
+      if (i <= route.checkpoints[3]) expect(phase(m, 'recon').done).toBe(false);
+    }
+    expect(obj(m, 'recon', 'recon.circle').state).toBe('done');
+    expect(obj(m, 'foothold', 'foothold.dock').state).toBe('hidden');
     expect(phase(m, 'recon').done).toBe(true);
     expect(phase(m, 'foothold').active).toBe(true);
   });

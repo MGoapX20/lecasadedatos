@@ -18,6 +18,7 @@ import { mat, type MatKey } from './materials';
 import { AnimationAction, AnimationMixer, LoopRepeat } from 'three';
 import { clone as cloneSkeleton } from 'three/examples/jsm/utils/SkeletonUtils.js';
 import type { CharacterModel, ModelLib } from './models';
+import { characterHeight } from './readability';
 
 const UP = new Vector3(0, 1, 0);
 const RIGHT = new Vector3(1, 0, 0);
@@ -301,9 +302,6 @@ export function makeGuardBatch(capacity: number, models?: ModelLib): CharacterBa
   });
 }
 
-/** Height of a person in world units; interior walls are 2.6. */
-const PERSON_HEIGHT = 1.72;
-
 interface Slot {
   silhouettes?: Mesh[];
   node: Object3D;
@@ -416,7 +414,7 @@ export class SkinnedCharacterBatch implements CharacterBatch {
     active.position.set(pose.x, -0.55 * pose.crouch * 0.4, pose.z);
     // The model faces +z; facing 0 in the sim means +x.
     active.rotation.y = Math.PI / 2 - pose.facingRad;
-    const h = PERSON_HEIGHT * (pose.scale / 1.28);
+    const h = characterHeight(pose.scale);
     active.scale.set(h, h * (1 - 0.18 * pose.crouch), h);
     // Smooth the speed so a one-tick stutter does not flicker the animation.
     s.moving += (pose.moving - s.moving) * 0.25;

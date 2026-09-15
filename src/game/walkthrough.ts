@@ -1,16 +1,13 @@
 import type { Level } from '../level/loader';
 import type { SimWorld } from '../sim/world';
 import type { MissionTracker, MarkRef } from './missions';
+import type { FloorRoute } from './recon';
 
 export interface GuideTarget { cell: readonly number[]; mark?: MarkRef }
-export interface GuideStep { id: string; labelKey: string; targets: GuideTarget[] }
+export interface GuideStep { id: string; labelKey: string; targets: GuideTarget[]; floorRoute?: FloorRoute }
 
 /** Advisory only: observing progress never changes the simulation or its missions. */
 export class GuidedWalkthrough {
-  private left = false;
-  private right = false;
-  reset(): void { this.left = this.right = false; }
-
   update(world: SimWorld, level: Level, missions: MissionTracker): GuideStep | null {
     const p = world.player;
     if (!p || world.exfilDone) return null;
@@ -20,19 +17,20 @@ export class GuidedWalkthrough {
       const d = level.doors.find(d => d.id === id)!;
       return at([d.rect[0] + d.rect[2] / 2 - .5, d.rect[1] + d.rect[3] / 2 - .5], { kind: 'door', id });
     };
-    const sideY = level.json.entries.find(entry => entry.id === 'side')!.spawn[1];
-    const left = [6, sideY - 2], right = [90, sideY];
-    if (Math.hypot(p.x - left[0] - .5, p.y - left[1] - .5) < 7) this.left = true;
-    if (Math.hypot(p.x - right[0] - .5, p.y - right[1] - .5) < 7) this.right = true;
     const entered = missions.phases.find(x => x.id === 'foothold')?.done || p.breached;
     if (world.playerInTruck) return step('ride', [door('d_dock_outer')]);
     const inside = level.indoor[Math.floor(p.y) * level.w + Math.floor(p.x)] === 1;
     if (!entered || (!inside && !p.breached)) {
-      if (!entered && !this.right) return step('right', [at(right)]);
-      if (!entered && !this.left) return step('left', [at(left)]);
-      return step('entry', level.json.entries.map(e => e.id === 'dock'
+      const discovered = new Set(missions.phases.find(phase => phase.id === 'foothold')?.objectives
+        .filter(objective => objective.state !== 'hidden').map(objective => objective.id));
+      const entrances = level.json.entries.filter(e => discovered.has(`foothold.${e.id}`)).map(e => e.id === 'dock'
         ? at([world.truck.x - .5, world.truck.y - .5], { kind: 'truck' })
-        : e.doorId ? door(e.doorId) : at(e.spawn, { kind: 'portal', id: `p_${e.id}` })));
+        : e.doorId ? door(e.doorId) : at(e.spawn, { kind: 'portal', id: `p_${e.id}` }));
+      if (!entered && !missions.recon.complete) return {
+        ...step('circle', entrances),
+        floorRoute: missions.recon.floorRoute(level),
+      };
+      return step('entry', entrances);
     }
     // Reaching the vault early skips optional preparation rather than sending the visitor back.
     if (!p.breached) {

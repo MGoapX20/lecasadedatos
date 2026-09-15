@@ -1,5 +1,7 @@
 import type { GameFlow } from '../game/flow';
 import type { SimEvent } from '../sim/events';
+import { DefenseProjector } from './defense';
+import { isDefenseStage } from './protocol';
 import type {
   EntryId,
   JournalEvent,
@@ -10,7 +12,7 @@ import type {
 export type ProjectionSource = Pick<
   GameFlow,
   'state' | 'world' | 'session' | 'missions' | 'paused' | 'displayState'
-> & Partial<Pick<GameFlow, 'advisoryStep'>>;
+> & Partial<Pick<GameFlow, 'advisoryStep' | 'defenseDisplayState'>>;
 
 /** No DOM, renderer, or changes to the simulation: this is only a projection. */
 export class SnapshotProjector {
@@ -20,6 +22,7 @@ export class SnapshotProjector {
   private visit = -1;
   private target = 0;
   private boot = '';
+  private defense = new DefenseProjector();
   constructor(
     public source: string,
     private readonly nextTarget: () => number,
@@ -37,7 +40,7 @@ export class SnapshotProjector {
   }
   note(flow: ProjectionSource, event: SimEvent): void {
     this.syncVisit(flow);
-    // Only the visitor's thief round belongs on this display.
+    if (isDefenseStage(flow.state)) { this.defense.note(flow, event); return; }
     if (flow.state !== 'round1') return;
     this.journal.push({
       id: ++this.eventId,
@@ -67,6 +70,9 @@ export class SnapshotProjector {
       language,
       operator: flow.session.codename,
     };
+    if (isDefenseStage(flow.state)) return { ...base, state: flow.state,
+      stageMs: flow.displayState.elapsedMs, tick: flow.world.tick,
+      defense: this.defense.capture(flow) };
     // Idle heartbeats never inspect the world, missions, agents, or planner.
     if (flow.state !== 'round1') return { ...base, state: flow.state };
     const w = flow.world;

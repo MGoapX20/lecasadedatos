@@ -32,6 +32,8 @@ export interface BakeInput {
   guardRangeMul?: number;
   /** false once the power is cut: nothing on the cameras. */
   cameras?: boolean;
+  /** A uniform hides from cameras and shortens guard recognition until an alarm. */
+  disguised?: boolean;
 }
 
 function alarmMulAt(windows: AlarmWindow[], tick: number, mul: number): number {
@@ -83,13 +85,13 @@ export function bakeDangerMap(input: BakeInput): DangerMap {
           pose.y,
           pose.facingDeg,
           def.vision.fovDeg,
-          (def.vision.range / level.cellSize) * mul * (input.guardRangeMul ?? 1),
+          (def.vision.range / level.cellSize) * mul * (input.disguised && mul > 1 ? 1 : (input.guardRangeMul ?? 1)),
           mark,
         );
       }
 
       for (const c of level.json.cameras) {
-        if (input.cameras === false) break;
+        if (input.cameras === false || (input.disguised && mul === 1)) break;
         if (!c.sweep && s > 0) continue; // a fixed camera never changes
         const facing = cameraFacingAt(c.facingDeg, c.sweep, tick);
         forEachVisibleCell(

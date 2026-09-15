@@ -1,6 +1,6 @@
 import type { GameFlow } from '../game/flow';
 import { lang, t } from '../ui/i18n';
-import { PROTOCOL, DISCOVERY, channelName, type Snapshot } from './protocol';
+import { PROTOCOL, DISCOVERY, channelName, isLiveStage, type Snapshot } from './protocol';
 import { SnapshotProjector } from './snapshot';
 import { TARGETS } from './targets';
 
@@ -116,7 +116,7 @@ export function mountCompanion(
     if (disposed || !bus) return;
     // Phase changes bypass the throttle so the display clears/restarts at once.
     if (!force && latest?.state === flow.state && now < nextSend) return;
-    nextSend = now + (flow.state === 'round1' ? 200 : 1000);
+    nextSend = now + (isLiveStage(flow.state) ? 200 : 1000);
     try {
       latest = project.capture(flow, Date.now(), lang());
       latest.suspended = document.hidden;

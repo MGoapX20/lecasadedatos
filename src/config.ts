@@ -54,9 +54,14 @@ export const TIMERS = {
   round2ACap: 46_000,
   /** How long the wave A verdict stays on screen before the AI's turn. */
   round2AResult: 2800,
+  /** Read the single-attacker result and introduce parallel AI attackers. */
+  aiHandoff: 7500,
   /** The beat where the AI's routes fan out across the building. */
   aiThink: 6000,
-  round2BCap: 45_000,
+  /** Includes the approach from the shared front-door launch point. */
+  round2BCap: 60_000,
+  /** Let the swarm's ending register before the comparison screen. */
+  round2BResult: 3500,
   resultsAuto: 32_000,
   idleGameplay: 45_000,
   idleResults: 90_000,

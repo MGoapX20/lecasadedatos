@@ -3,7 +3,7 @@
   <head>
     <meta charset="utf-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
-    <title>La Casa de Datos</title>
+    <title>La Casa de Uranio</title>
     <link rel="stylesheet" href="/src/ui/style.css" />
   </head>
   <body>
@@ -27,7 +27,7 @@
           <h1 class="wordmark">
             <span class="wm-word" data-i18n="title.part1">LA CASA</span
             ><span class="wm-box"><span class="wm-de" data-i18n="title.box">DE</span></span
-            ><span class="wm-word" data-i18n="title.part2">DATOS</span>
+            ><span class="wm-word" data-i18n="title.part2">URANIO</span>
           </h1>
           <p class="subtitle" data-i18n="title.sub">The AI Infiltration — Nuclear Base</p>
           <div class="ai-credit">
@@ -133,23 +133,33 @@
 
       <!-- ROUND 2 HUD -->
       <section id="scr-hud2" class="screen hud">
-        <div class="hud-top">
-          <div class="chip name"><span class="chip-k" data-i18n="common.you"></span><span class="chip-v" id="h2-name"></span></div>
-          <div class="chip"><span class="chip-k" data-i18n="round2.hud.locks"></span><span class="chip-v" id="h2-locks">3</span></div>
-          <button class="chip action" id="h2-alarm-chip" type="button"><span class="chip-k" data-i18n="round2.hud.alarm"></span><span class="chip-v" id="h2-alarm"></span></button>
+        <div class="hud-top defense-top">
+          <div class="defense-identity"><span class="defense-emblem" data-defense-icon="guard"></span><span><small data-i18n="defense.mode"></small><strong data-i18n="defense.command"></strong></span><span id="h2-name"></span></div>
           <div class="chip danger"><span class="chip-k" data-i18n="round2.hud.breaches"></span><span class="chip-v" id="h2-breaches">0</span></div>
           <div class="chip good"><span class="chip-k" data-i18n="round2.hud.caught"></span><span class="chip-v" id="h2-caught">0</span></div>
           <div class="chip"><span class="chip-k" data-i18n="round2.hud.thieves"></span><span class="chip-v" id="h2-thieves">0</span></div>
         </div>
+        <div id="h2-markers"></div>
         <div class="wave-title" id="h2-wave"></div>
         <div class="banner" id="h2-banner"></div>
-        <div class="hud-bottom"><span id="h2-prompt"></span></div>
+        <div class="defense-controls">
+          <div class="defense-context"><span class="defense-click" aria-hidden="true"></span><span id="h2-prompt"></span></div>
+          <div class="defense-dock">
+            <div class="defense-action" id="h2-move-action"><span class="defense-action-icon" data-defense-icon="guard"></span><span><strong data-i18n="defense.move"></strong><small data-i18n="defense.moveHint"></small></span><kbd data-i18n="defense.click"></kbd></div>
+            <div class="defense-action" id="h2-lock-action"><span class="defense-action-icon" data-defense-icon="lock"></span><span><strong data-i18n="defense.lock"></strong><small id="h2-lock-hint"></small></span><b id="h2-locks">3</b></div>
+            <button class="defense-action defense-alarm" id="h2-alarm-chip" type="button"><span class="defense-action-icon" data-defense-icon="alarm"></span><span><strong data-i18n="defense.alarm"></strong><small id="h2-alarm-hint"></small></span><kbd id="h2-alarm">X</kbd></button>
+          </div>
+          <span class="defense-view-hint" data-i18n="defense.rotate"></span>
+        </div>
       </section>
 
       <!-- WAYS IN: shared by the planning beat and the swarm round -->
-      <aside class="ways" id="ways">
-        <h3 class="ways-title" id="ways-title"></h3>
-        <ol class="ways-list" id="ways-list"></ol>
+      <aside class="ways" id="ways" aria-labelledby="ways-title">
+        <header class="ways-header">
+          <h3 class="ways-title" id="ways-title"></h3>
+          <span class="ways-phase" id="ways-phase"></span>
+        </header>
+        <ul class="ways-list" id="ways-list"></ul>
       </aside>
 
       <!-- RESULTS -->
@@ -179,12 +189,48 @@
 
       <!-- THE AI PLANNING -->
       <section id="scr-think" class="screen think">
-        <h2 class="think-title" data-i18n="think.title"></h2>
-        <div class="think-count"><span id="think-n">0</span></div>
-        <p class="think-unit" id="think-unit"></p>
-        <p class="think-clock" id="think-clock"></p>
-        <p class="think-note" id="think-note" data-i18n="think.note"></p>
+        <div id="swarm-handoff" class="swarm-handoff" hidden aria-labelledby="handoff-title">
+          <p class="handoff-eyebrow" data-i18n="handoff.eyebrow"></p>
+          <p id="handoff-result" class="handoff-result" role="status"></p>
+          <h2 id="handoff-title" class="handoff-title"><span data-i18n="handoff.title"></span><em data-i18n="handoff.parallel"></em></h2>
+          <p class="handoff-copy" data-i18n="handoff.body"></p>
+          <div class="handoff-comparison">
+            <div class="handoff-one"><strong>1</strong><span data-i18n="handoff.one"></span></div>
+            <svg class="handoff-branches" viewBox="0 0 180 120" fill="none" aria-hidden="true">
+              <path d="M0 60 H45 C90 60 80 15 130 15 H180 M0 60 H180 M0 60 H45 C90 60 80 105 130 105 H180"/>
+            </svg>
+            <div class="handoff-many"><div id="handoff-agents" class="handoff-agents" aria-hidden="true"></div><span data-i18n="handoff.many"></span></div>
+          </div>
+          <p class="handoff-tagline" data-i18n="handoff.tagline"></p>
+          <div class="handoff-progress" aria-hidden="true"><span id="handoff-progress"></span></div>
+        </div>
+        <div id="think-planning" class="think-planning">
+          <h2 class="think-title" data-i18n="think.title"></h2>
+          <div class="think-count"><span id="think-n">0</span></div>
+          <p class="think-unit" id="think-unit"></p>
+          <p class="think-clock" id="think-clock"></p>
+          <p class="think-note" id="think-note" data-i18n="think.note"></p>
+        </div>
+        <div id="think-launch" class="think-launch" hidden role="status">
+          <span data-i18n="handoff.incoming"></span><strong id="think-countdown"></strong>
+          <p id="think-agents"></p>
+        </div>
       </section>
+
+      <!-- SWARM ENDING -->
+      <div id="swarm-result" class="swarm-result" hidden role="status" aria-labelledby="swarm-result-title">
+        <div class="swarm-result-card">
+          <span class="swarm-result-kicker" data-i18n="swarmEnd.kicker"></span>
+          <h2 id="swarm-result-title" data-i18n="swarmEnd.title"></h2>
+          <p id="swarm-result-reason"></p>
+          <div class="swarm-result-stats">
+            <span><strong id="swarm-result-breaches">0</strong><small data-i18n="round2.hud.breaches"></small></span>
+            <span><strong id="swarm-result-caught">0</strong><small data-i18n="round2.hud.caught"></small></span>
+          </div>
+          <p class="swarm-result-next" data-i18n="swarmEnd.next"></p>
+          <div class="swarm-result-progress" aria-hidden="true"><span id="swarm-result-progress"></span></div>
+        </div>
+      </div>
 
       <!-- PAUSE MENU -->
       <section id="scr-menu" class="screen menu">

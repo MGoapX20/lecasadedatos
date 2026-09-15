@@ -4,14 +4,15 @@ import { cellOf, computeOpaqueWithDoors, fineToPlan, type Level, type RuntimePor
 import type { Plan } from '../planner/types';
 import type { CellXY } from '../level/schema';
 import type { SimEvent } from './events';
-import { blankPose, compileGuardProgram, poseAt, type PatrolProgram, type Pose } from './patrol';
-import { samplePlan } from './planFollow';
+import { blankPose, compileGuardProgram, guardOrderRoute, orderGuardTo, poseAt, type PatrolProgram, type Pose } from './patrol';
+import { planCellCenterX, planCellCenterY, samplePlan } from './planFollow';
 import { DEFAULT_PICK, LockpickGame, type PickResult } from './lockpick';
 import { WireCutGame } from './wirecut';
 import { blankTruckPose, truckIsOpen, truckPoseAt, type TruckPose } from './truck';
 import { DrillGame } from './drill';
 import { holeCells, vanPoseAt, type ExfilDef, type VanPose } from './exfil';
 import { cameraFacingAt, seesPoint } from './vision';
+import { PlayerNavigator, playerPointClear, playerSegmentClear, type WalkPoint } from './navigation';
 
 export type GuardState = 'patrol' | 'suspicious' | 'chase' | 'return';
 
@@ -38,6 +39,9 @@ export interface Guard {
 }
 
 export type ThiefKind = 'player' | 'plan';
+
+/** A brisk pace for the visitor's perimeter tour and indoor movement. */
+const PLAYER_MOVE_SPEED_MULTIPLIER = 1.5;
 
 export interface Thief {
   id: number;
@@ -66,8 +70,9 @@ export interface Thief {
   /** Player only. */
   moveX: number;
   moveY: number;
-  routeCells: number[] | null;
+  routePoints: WalkPoint[] | null;
   routeIdx: number;
+  routeGoal: number;
   lockpickDoor: number;
   lockpickTicks: number;
   lockpickNeed: number;
@@ -90,6 +95,10 @@ export interface Thief {
   blockedTicks: number;
   /** True while a plan follower is holding position on purpose. */
   waiting: boolean;
+  /** Plan followers boarding the real supplier vehicle, rather than a portal animation. */
+  ridingTruck?: boolean;
+  waitingForTruck?: boolean;
+  awaitingPlan?: boolean;
   /** Doors this thief has already picked open for itself. */
   pickedDoors: Set<number>;
   /** Locked doors this thief has already opened with a card. */
@@ -105,7 +114,6 @@ export interface ChiefState {
 }
 
 const CATCH_RADIUS = 1.2; // fine cells
-const PLAYER_RADIUS = 0.7;
 const SUSPICION_TO_CHASE = 8; // ticks in sight
 /** A stolen uniform: guards only recognise the thief this close. Must match the planner. */
 export const DISGUISE_RANGE_MUL = 0.3;
@@ -167,9 +175,11 @@ export class SimWorld {
   /** Walls plus shut doors; rebuilt whenever a door changes. */
   opaqueNow: Uint8Array;
   private doorShut: Uint8Array;
+  private playerNavigator: PlayerNavigator;
 
   constructor(level: Level, seed = 1) {
     this.level = level;
+    this.playerNavigator = new PlayerNavigator(level.w, level.h);
     this.rng = new Rng(seed);
     this.doorLocked = new Uint8Array(level.doors.length);
     this.doorShut = new Uint8Array(level.doors.length);
@@ -254,8 +264,9 @@ export class SimWorld {
       caughtCount: 0,
       moveX: 0,
       moveY: 0,
-      routeCells: null,
+      routePoints: null,
       routeIdx: 0,
+      routeGoal: -1,
       lockpickDoor: -1,
       lockpickTicks: 0,
       lockpickNeed: 0,
@@ -285,6 +296,7 @@ export class SimWorld {
   spawnPlayer(entryId: string, codename: string): Thief {
     const entry = this.level.json.entries.find((e) => e.id === entryId) ?? this.level.json.entries[0];
     const t = this.makeThief('player', cellOf(this.level, entry.spawn), codename, entry.id);
+    t.speed *= PLAYER_MOVE_SPEED_MULTIPLIER;
     this.playerId = t.id;
     // Nobody should be spotted before they have touched a key.
     t.graceTicks = 60;
@@ -354,32 +366,54 @@ export class SimWorld {
     if (!p) return;
     p.moveX = dx;
     p.moveY = dy;
-    if (dx !== 0 || dy !== 0) p.routeCells = null;
+    if (dx !== 0 || dy !== 0) this.clearPlayerRoute(p);
   }
 
-  setPlayerRoute(targetFine: number): void {
+  setPlayerRoute(targetFine: number): boolean {
     const p = this.player;
-    if (!p || p.respawnIn > 0) return;
-    const from = this.fineOf(p);
-    const blocked = new Uint8Array(this.level.cellCount);
-    for (let i = 0; i < this.level.doorAt.length; i++) {
-      const d = this.level.doorAt[i];
-      if (d >= 0 && !this.doorOpenFor(d, p)) blocked[i] = 1;
-    }
-    const path = staticAStar(
-      this.walkNow,
-      this.level.w,
-      this.level.h,
-      from,
-      targetFine,
-      this.level.scratch,
-      blocked,
-    );
-    if (!path) return;
-    p.routeCells = simplifyPath(path, this.walkNow, this.level.w, this.level.h);
+    if (!p || p.respawnIn > 0 || this.playerInTruck || p.portalTicks > 0) return false;
+    const path = this.playerNavigator.route(p, targetFine, cell => this.passable(cell, p));
+    this.clearPlayerRoute(p);
+    if (!path) return false;
+    p.routePoints = path;
+    p.routeGoal = targetFine;
     p.routeIdx = 1;
     p.moveX = 0;
     p.moveY = 0;
+    return true;
+  }
+
+  private clearPlayerRoute(p: Thief): void {
+    p.routePoints = null;
+    p.routeGoal = -1;
+    p.routeIdx = 0;
+  }
+
+  /** Read-only preview; the cursor and the committed order use the same selection. */
+  nearestGuardOrder(targetCell: number): { guard: Guard; route: NonNullable<ReturnType<typeof guardOrderRoute>> } | null {
+    let nearest: { guard: Guard; route: NonNullable<ReturnType<typeof guardOrderRoute>> } | null = null;
+    let shortest = Infinity;
+    for (const guard of this.guards) {
+      if (!guard.present) continue;
+      const route = guardOrderRoute(this.level, guard, targetCell);
+      if (route && route.distance < shortest) {
+        nearest = { guard, route };
+        shortest = route.distance;
+      }
+    }
+    return nearest;
+  }
+
+  /** Dispatch the present guard with the shortest reachable walking route. */
+  orderNearestGuardTo(targetCell: number): Guard | null {
+    const nearest = this.nearestGuardOrder(targetCell);
+    if (!nearest) return null;
+    const { guard } = nearest;
+    orderGuardTo(this.level, guard.program, this.tick + 4, targetCell, 40, 200, guard);
+    guard.state = 'return';
+    guard.path = null;
+    this.events.push({ kind: 'guardOrdered', guard: guard.id });
+    return guard;
   }
 
   lockDoor(doorIdx: number, locked: boolean, byChief: boolean): boolean {
@@ -474,29 +508,18 @@ export class SimWorld {
 
     let dx = t.moveX;
     let dy = t.moveY;
-    if (t.routeCells && t.routeIdx < t.routeCells.length) {
-      const target = t.routeCells[t.routeIdx];
-      const tx = (target % this.level.w) + 0.5;
-      const ty = ((target / this.level.w) | 0) + 0.5;
-      const ddx = tx - t.x;
-      const ddy = ty - t.y;
-      const d = Math.hypot(ddx, ddy);
-      if (d < 0.35) {
-        t.routeIdx++;
-        if (t.routeIdx >= t.routeCells.length) t.routeCells = null;
-      } else {
-        dx = ddx / d;
-        dy = ddy / d;
-      }
-    } else if (t.routeCells) {
-      t.routeCells = null;
+    const followingRoute = !!t.routePoints;
+    if (followingRoute) {
+      const x = t.x, y = t.y;
+      this.followPlayerRoute(t);
+      dx = t.x - x; dy = t.y - y;
     }
 
     const mag = Math.hypot(dx, dy);
     if (mag > 1e-4) {
       const nx = (dx / mag) * t.speed;
       const ny = (dy / mag) * t.speed;
-      this.moveWithCollision(t, nx, ny);
+      if (!followingRoute) this.moveWithCollision(t, nx, ny);
       t.facing = (Math.atan2(ny, nx) * 180) / Math.PI;
       t.lockpickDoor = -1;
       t.lockpickTicks = 0;
@@ -537,9 +560,8 @@ export class SimWorld {
 
     // Enter a vent or sewer by standing on its mouth.
     const planCell = fineToPlan(this.level, cell);
-    const portals = this.level.portalsFrom.get(planCell);
-    if (portals && portals.length && mag <= 1e-4) {
-      const p = portals[0];
+    const p = this.level.portalsFrom.get(planCell)?.find(portal => portal.truckStop === undefined);
+    if (p && mag <= 1e-4) {
       t.portalTicks = p.quanta * this.level.json.rules.quantumTicks;
       t.portalRef = p;
       t.hidden = true;
@@ -747,17 +769,31 @@ export class SimWorld {
     }
   }
 
-  private freeAt(t: Thief, x: number, y: number): boolean {
-    const r = PLAYER_RADIUS;
-    for (let i = 0; i < 4; i++) {
-      const px = x + (i === 0 ? r : i === 1 ? -r : 0);
-      const py = y + (i === 2 ? r : i === 3 ? -r : 0);
-      const cx = Math.floor(px);
-      const cy = Math.floor(py);
-      if (cx < 0 || cy < 0 || cx >= this.level.w || cy >= this.level.h) return false;
-      if (!this.passable(cy * this.level.w + cx, t)) return false;
+  private followPlayerRoute(t: Thief): void {
+    let remaining = t.speed, replanned = false;
+    const passable = (cell: number) => this.passable(cell, t);
+    // Spend the whole movement step across corners, with no overshoot or pause
+    // at each waypoint. A newly shut door gets one immediate route replacement.
+    for (let i = 0; i < 12 && remaining > 1e-6 && t.routePoints; i++) {
+      const target = t.routePoints[t.routeIdx];
+      if (!target) { this.clearPlayerRoute(t); break; }
+      const dx = target.x - t.x, dy = target.y - t.y, distance = Math.hypot(dx, dy);
+      if (distance < 1e-6) { t.routeIdx++; continue; }
+      const step = Math.min(remaining, distance);
+      const next = { x: t.x + dx / distance * step, y: t.y + dy / distance * step };
+      if (!playerSegmentClear(this.level.w, this.level.h, t, next, passable)) {
+        const goal = t.routeGoal;
+        if (!replanned && this.setPlayerRoute(goal)) { replanned = true; continue; }
+        this.clearPlayerRoute(t); break;
+      }
+      t.x = next.x; t.y = next.y; remaining -= step;
+      if (step === distance) t.routeIdx++;
+      if (t.routeIdx >= t.routePoints.length) this.clearPlayerRoute(t);
     }
-    return true;
+  }
+
+  private freeAt(t: Thief, x: number, y: number): boolean {
+    return playerPointClear(this.level.w, this.level.h, x, y, cell => this.passable(cell, t));
   }
 
   // -------------------------------------------------------- plan followers
@@ -777,6 +813,41 @@ export class SimWorld {
     const qf = relTicks / qt;
     const s = samplePlan(this.level, plan, qf, t.nodeIdx);
     t.nodeIdx = s.nodeIdx;
+    const cur = plan.nodes[s.nodeIdx], prev = plan.nodes[s.nodeIdx - 1];
+    const truckLeg = s.phase === 'active' && cur.kind === 'portal'
+      ? this.level.portalsFrom.get(prev.cell)?.find(p => p.truckStop !== undefined && p.def.id === cur.ref)
+      : undefined;
+    t.waitingForTruck = false;
+
+    // The plan reserves a real loading window. If its clock was delayed (for
+    // example by a new lock), wait for the vehicle instead of teleporting in.
+    if (truckLeg && !t.ridingTruck) {
+      const x = planCellCenterX(this.level, prev.cell), y = planCellCenterY(this.level, prev.cell);
+      if (this.truck.phase !== 'loading' || Math.hypot(x - this.truck.x, y - this.truck.y) > SimWorld.TRUCK_REACH) {
+        t.x = x; t.y = y; t.hidden = false; t.waiting = true; t.waitingForTruck = true;
+        t.planStartTick++;
+        return;
+      }
+      t.ridingTruck = true;
+      t.portalRef = truckLeg;
+      this.events.push({ kind: 'truckBoard', thief: t.id });
+    }
+    if (t.ridingTruck) {
+      const exit = t.portalRef!;
+      const atBay = (this.truck.phase === 'unloading' || this.truck.phase === 'parked')
+        && Math.hypot(this.truck.x - planCellCenterX(this.level, exit.toPlan),
+          this.truck.y - planCellCenterY(this.level, exit.toPlan)) <= SimWorld.TRUCK_REACH;
+      if (truckLeg || !atBay) {
+        t.x = this.truck.x; t.y = this.truck.y; t.facing = this.truck.facing;
+        t.hidden = true; t.waiting = false;
+        if (!truckLeg) t.planStartTick++;
+        else this.firePlanActions(t, plan, relTicks, qt);
+        return;
+      }
+      t.ridingTruck = false;
+      t.portalRef = null;
+      this.events.push({ kind: 'truckLeave', thief: t.id, inside: true });
+    }
 
     if (s.phase === 'pending') {
       t.x = s.x;
@@ -789,6 +860,11 @@ export class SimWorld {
       t.x = s.x;
       t.y = s.y;
       t.hidden = false;
+      if (plan.replanOnArrival) {
+        t.awaitingPlan = true;
+        t.waiting = true;
+        return;
+      }
       if (plan.reachedVault && !t.breached) {
         t.breached = true;
         // The breach is still the moment the vault is reached — that is the
@@ -816,9 +892,6 @@ export class SimWorld {
     }
 
     // A door the chief locked after this plan was made stops the agent dead.
-    const nodes = plan.nodes;
-    const cur = nodes[s.nodeIdx];
-    const prev = nodes[s.nodeIdx - 1];
     if (cur.kind === 'move' || cur.kind === 'portal') {
       const di = this.level.pdoorAt[cur.cell];
       const aboutToPick = prev.kind === 'lockpick' && prev.ref === String(di);
@@ -835,6 +908,9 @@ export class SimWorld {
     t.blockedByDoor = -1;
     t.blockedTicks = 0;
     t.waiting = s.kind === 'wait' || s.kind === 'lockpick' || s.kind === 'print';
+    const next = plan.nodes[s.nodeIdx + 1];
+    t.waitingForTruck = s.kind === 'wait' && next?.kind === 'portal'
+      && !!this.level.portalsFrom.get(cur.cell)?.some(p => p.truckStop !== undefined && p.def.id === next.ref);
     t.x = s.x;
     t.y = s.y;
     t.hidden = s.hidden;
@@ -864,9 +940,11 @@ export class SimWorld {
           this.events.push({ kind: 'lockpickEnd', thief: t.id, door: Number(act.id) });
           break;
         case 'portalStart':
+          if (this.level.portals.some(p => p.truckStop !== undefined && p.def.id === act.id)) break;
           this.events.push({ kind: 'portalEnter', thief: t.id, portal: act.id });
           break;
         case 'portalEnd':
+          if (this.level.portals.some(p => p.truckStop !== undefined && p.def.id === act.id)) break;
           this.events.push({ kind: 'portalExit', thief: t.id, portal: act.id });
           break;
         case 'printStart':
@@ -886,6 +964,9 @@ export class SimWorld {
   abandonThief(t: Thief, reason: 'blocked' | 'expired'): void {
     if (!t.active) return;
     t.active = false;
+    t.ridingTruck = false;
+    t.waitingForTruck = false;
+    t.awaitingPlan = false;
     t.blockedByDoor = -1;
     t.blockedTicks = 0;
     this.events.push({ kind: 'thiefDone', thief: t.id, reason });
@@ -893,6 +974,9 @@ export class SimWorld {
 
   /** Swap in a fresh plan without teleporting the agent. */
   retargetThief(t: Thief, plan: Plan): void {
+    if (t.ridingTruck) return; // A hidden passenger must finish the physical ride first.
+    t.waitingForTruck = false;
+    t.awaitingPlan = false;
     t.plan = plan;
     t.planStartTick = plan.startQ * this.level.json.rules.quantumTicks;
     t.nodeIdx = 1;
@@ -966,7 +1050,7 @@ export class SimWorld {
     if (!t || !this.canBoardTruck(t)) return false;
     this.playerInTruck = true;
     t.hidden = true;
-    t.routeCells = null;
+    this.clearPlayerRoute(t);
     t.moveX = 0;
     t.moveY = 0;
     this.activeWire = null;
@@ -1421,7 +1505,7 @@ export class SimWorld {
       t.y = ((spot / this.level.w) | 0) + 0.5;
       t.respawnIn = 40;
       t.graceTicks = 50;
-      t.routeCells = null;
+      this.clearPlayerRoute(t);
       t.moveX = 0;
       t.moveY = 0;
       t.printTicks = 0;

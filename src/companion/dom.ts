@@ -30,6 +30,10 @@ function patchChildren(current: Node, next: Node): void {
       if (match) {
         current.insertBefore(match, old);
         old = match;
+      } else if (key(old) && desired.slice(i + 1).some(x => key(x) === key(old))) {
+        // Prepending new logs must preserve the existing keyed rows and animations.
+        current.insertBefore(n.cloneNode(true), old);
+        continue;
       }
     }
     if (!compatible(old, n)) {

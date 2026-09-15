@@ -46,7 +46,9 @@ self.onmessage = (ev: MessageEvent<PlannerRequestMsg>) => {
       return;
     }
     currentJob = msg.jobId;
-    void runChunked(msg.jobId, msg.dynamic, msg.requests, msg.budgetMs);
+    void runChunked(msg.jobId, msg.dynamic, msg.requests, msg.budgetMs).catch(err => {
+      if (currentJob === msg.jobId) post({ type: 'error', jobId: msg.jobId, message: String(err) });
+    });
   }
 };
 
@@ -73,6 +75,7 @@ async function runChunked(
       alarmWindows: dynamic.alarmWindows,
       withMargin,
       doorLocked: dynamic.doorLocked,
+      cameras: dynamic.cameras,
     });
   } catch (err) {
     post({ type: 'error', jobId, message: String(err) });
@@ -98,6 +101,7 @@ async function runChunked(
     requests,
     budgetMs,
     keycardCells: dynamic.keycardCells,
+    cameras: dynamic.cameras,
   };
 
   let found = 0;
@@ -106,14 +110,17 @@ async function runChunked(
   const batcher = new PlanBatcher((plans) => post({ type: 'plans', jobId, plans }), CHUNK);
 
   let attempted = 0;
+  // Baking the timetable is setup, not a search. On a busy kiosk it used to
+  // consume the entire budget and report zero routes without trying even one.
+  const searchStarted = Date.now();
   for (let i = 0; i < requests.length; i++) {
     if (currentJob !== jobId) return;
-    if (Date.now() - t0 > budgetMs) break;
+    if (attempted > 0 && Date.now() - searchStarted > budgetMs) break;
     attempted++;
     const plan = planOne(input, danger, requests[i], scratch);
     if (plan) {
       expansions += plan.expansions;
-      if (tracker.isNew(plan.signature)) tracker.accept(plan);
+      if (plan.request.coverage || tracker.isNew(plan.signature)) tracker.accept(plan);
       batcher.add(plan);
       found++;
     } else {

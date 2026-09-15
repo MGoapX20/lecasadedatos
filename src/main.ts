@@ -45,7 +45,7 @@ async function boot(): Promise<void> {
   }));
   const audio = new AudioBus();
   // Decode the music now so the first gesture only has to resume the context.
-  audio.preload(['/audio/theme.m4a', '/audio/bella_ciao.m4a']);
+  audio.preload(['/audio/theme.m4a']);
   const planner = new PlannerClient(level.json);
 
   const flow = new GameFlow({ level, stage, director, view, input, overlay, audio, planner, canvas });

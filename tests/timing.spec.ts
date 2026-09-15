@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import { compileGuardProgram } from '../src/sim/patrol';
-import { enumerateRequests, SWARM_DELAYS } from '../src/planner/options';
+import { enumerateSwarmRequests } from '../src/planner/options';
 import { makeCtx, runJob } from '../src/planner/planner';
 import { SimWorld } from '../src/sim/world';
 import { TIMERS } from '../src/config';
@@ -16,7 +16,7 @@ describe('swarm timing within the round', () => {
     const ctx = makeCtx(level);
     const job = runJob({
       level, ctx, programs, baseTick: 0, doorLocked, alarmWindows: [],
-      requests: enumerateRequests(level, 60, 777, 1, SWARM_DELAYS),
+      requests: enumerateSwarmRequests(level, 60, 777),
       budgetMs: 20000,
     });
     const ends = job.plans.map((p) => p.endQ * level.json.rules.quantumTicks / level.json.rules.tickHz).sort((a,b)=>a-b);
@@ -46,9 +46,8 @@ describe('swarm timing within the round', () => {
       `plans ${job.plans.length}, breaches ${breaches}, caught ${caught}, ` +
       `firstBreach ${firstBreachSec.toFixed(1)}s, median ${medianSec.toFixed(1)}s`,
     );
-    // The building's travel distances and corridor windows put the earliest
-    // possible break-in around 27s, which gives the round its shape: the
-    // visitor holds for about half of it, then the counter runs away.
+    // The shared outside approach must leave time to react, while still
+    // allowing enough breaches for the swarm's result to land in this round.
     expect(breaches, 'the swarm must actually break in on screen').toBeGreaterThan(10);
     expect(firstBreachSec, 'the first breach must land inside the round').toBeLessThan(34);
     expect(firstBreachSec, 'but not so early the visitor never gets a turn').toBeGreaterThan(8);

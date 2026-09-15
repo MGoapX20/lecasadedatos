@@ -29,7 +29,7 @@ import { mergeGeometries, mergeVertices } from 'three/examples/jsm/utils/BufferG
 import { fineXYToWorldX, fineXYToWorldZ, type Level } from '../level/loader';
 import { coneSamples, type ConeSample } from '../level/visibility';
 import type { Plan } from '../planner/types';
-import { planCellCenterX, planCellCenterY } from '../sim/planFollow';
+import { planPathPoints } from '../sim/planFollow';
 import { PALETTE } from './palette';
 import { secretDocumentTexture } from './documents';
 
@@ -259,28 +259,27 @@ export class RouteTrails {
     const dotGeoms: BufferGeometry[] = [];
     const asDots = n <= 2;
     for (let i = 0; i < n; i++) {
-      const nodes = plans[i].nodes;
+      const nodes = planPathPoints(level, plans[i]);
       for (let k = 1; k < nodes.length; k++) {
         const a = nodes[k - 1];
         const b = nodes[k];
-        if (a.cell === b.cell) continue;
         if (asDots) {
           const g = new CircleGeometry(0.26, 10);
           g.rotateX(-Math.PI / 2);
           g.translate(
-            fineXYToWorldX(level, planCellCenterX(level, b.cell)),
+            fineXYToWorldX(level, b.x),
             0.1,
-            fineXYToWorldZ(level, planCellCenterY(level, b.cell)),
+            fineXYToWorldZ(level, b.y),
           );
           dotGeoms.push(g);
         }
         pts.push(
-          fineXYToWorldX(level, planCellCenterX(level, a.cell)),
+          fineXYToWorldX(level, a.x),
           0.09,
-          fineXYToWorldZ(level, planCellCenterY(level, a.cell)),
-          fineXYToWorldX(level, planCellCenterX(level, b.cell)),
+          fineXYToWorldZ(level, a.y),
+          fineXYToWorldX(level, b.x),
           0.09,
-          fineXYToWorldZ(level, planCellCenterY(level, b.cell)),
+          fineXYToWorldZ(level, b.y),
         );
       }
     }
@@ -699,15 +698,15 @@ export class WayRibbons {
   build(level: Level, ways: { plan: Plan; color: number }[], width = 0.42): void {
     this.clear();
     for (const w of ways) {
-      const nodes = w.plan.nodes;
+      const nodes = planPathPoints(level, w.plan);
       const geoms: BufferGeometry[] = [];
       let px = 0;
       let pz = 0;
       let has = false;
       for (let k = 0; k < nodes.length; k++) {
         const n = nodes[k];
-        const x = fineXYToWorldX(level, planCellCenterX(level, n.cell));
-        const z = fineXYToWorldZ(level, planCellCenterY(level, n.cell));
+        const x = fineXYToWorldX(level, n.x);
+        const z = fineXYToWorldZ(level, n.y);
         if (has && (x !== px || z !== pz)) {
           const dx = x - px;
           const dz = z - pz;

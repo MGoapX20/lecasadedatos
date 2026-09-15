@@ -2,6 +2,7 @@ import type { Level } from '../level/loader';
 import type { CellXY } from '../level/schema';
 import type { SimEvent } from '../sim/events';
 import type { SimWorld, Thief } from '../sim/world';
+import { ReconCircuit } from './recon';
 
 /**
  * The briefing, in two languages at once: what a thief is doing, and what the
@@ -63,10 +64,6 @@ export interface Phase {
 
 /** How close the thief has to get before a way in is on the list. */
 const DISCOVER_CELLS = 9;
-/** Sides of the perimeter that count as having walked round. */
-const SIDES_FOR_RECON = 3;
-/** Ways in that have to be on the list before the recon is called done. */
-const WAYS_FOR_RECON = 5;
 
 interface FootholdSpec {
   id: string;
@@ -149,7 +146,7 @@ export class MissionTracker {
   private announced = new Set<string>();
   private cached: Phase[] = [];
   private done = new Set<string>();
-  private sides = new Set<string>();
+  readonly recon = new ReconCircuit();
   /** Which way in was actually used, once the thief is inside. */
   private usedEntry: string | null = null;
   private insideSeen = false;
@@ -162,7 +159,7 @@ export class MissionTracker {
   reset(): void {
     this.discovered.clear();
     this.done.clear();
-    this.sides.clear();
+    this.recon.reset();
     this.usedEntry = null;
     this.insideSeen = false;
     this.vaultSeen = false;
@@ -195,7 +192,7 @@ export class MissionTracker {
     this.world = world;
     this.level = level;
     if (player && !player.hidden) {
-      this.markSide(level, player);
+      if (!level.indoor[this.cellOf(level, player)]) this.recon.update(level, player);
       for (const spec of FOOTHOLDS) {
         if (this.discovered.has(spec.id)) continue;
         const at = spec.anchor(level, world);
@@ -274,17 +271,6 @@ export class MissionTracker {
     const x = Math.min(level.w - 1, Math.max(0, Math.floor(t.x)));
     const y = Math.min(level.h - 1, Math.max(0, Math.floor(t.y)));
     return y * level.w + x;
-  }
-
-  /** Which side of the building the thief is standing off, if any. */
-  private markSide(level: Level, t: Thief): void {
-    if (level.indoor[this.cellOf(level, t)] === 1) return;
-    const w = level.w;
-    const h = level.h;
-    if (t.y < h * 0.25) this.sides.add('n');
-    else if (t.y > h * 0.75) this.sides.add('s');
-    else if (t.x < w * 0.25) this.sides.add('w');
-    else if (t.x > w * 0.75) this.sides.add('e');
   }
 
   /**
@@ -366,16 +352,14 @@ export class MissionTracker {
   }
 
   private build(): Phase[] {
-    const reconCircled = this.sides.size >= SIDES_FOR_RECON;
-    const found = FOOTHOLDS.filter((f) => this.discovered.has(f.id)).length;
-    const reconMapped = found >= WAYS_FOR_RECON;
+    const reconCircled = this.recon.complete;
 
     const recon: Phase = {
       id: 'recon',
       labelKey: 'missions.recon',
       cyberKey: 'cyber.recon',
       // Getting inside is proof enough that the looking-around is over.
-      done: (reconCircled && reconMapped) || this.insideSeen,
+      done: reconCircled || this.insideSeen,
       active: false,
       objectives: [
         {
@@ -384,13 +368,7 @@ export class MissionTracker {
           cyberKey: 'cyber.externalRecon',
           state: reconCircled ? 'done' : 'open',
           discoverable: false,
-        },
-        {
-          id: 'recon.ways',
-          labelKey: 'missions.findWays',
-          cyberKey: 'cyber.attackSurface',
-          state: reconMapped ? 'done' : 'open',
-          discoverable: false,
+          note: `${Math.round(this.recon.fraction * 100)}%`,
         },
       ],
     };

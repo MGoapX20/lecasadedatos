@@ -2,6 +2,7 @@ import { AnimationMixer, Group, InstancedMesh, Matrix4, Mesh, Object3D, SkinnedM
 import { clone as cloneSkeleton } from 'three/examples/jsm/utils/SkeletonUtils.js';
 import type { CharacterModel } from './models';
 import type { CharacterBatch, CharacterPose } from './characters';
+import { characterHeight } from './readability';
 
 const WALK_FRAMES = 8;
 interface Frame { meshes: InstancedMesh[] }
@@ -61,7 +62,7 @@ export class BakedCharacterBatch implements CharacterBatch {
       const frames = this.variants[pose.variant && this.variants.length > 1 ? 1 : 0];
       const f = pose.moving > .05 ? 1 + Math.floor(((pose.phase % (Math.PI * 2)) + Math.PI * 2) % (Math.PI * 2) / (Math.PI * 2) * WALK_FRAMES) : 0;
       const frame = frames[f], index = frame.meshes[0]?.count ?? 0;
-      const height = 1.72 * pose.scale / 1.28;
+      const height = characterHeight(pose.scale);
       this.scratch.position.set(pose.x, -.22 * pose.crouch, pose.z);
       this.scratch.rotation.set(0, Math.PI / 2 - pose.facingRad, 0);
       this.scratch.scale.set(height, height * (1 - .18 * pose.crouch), height);
